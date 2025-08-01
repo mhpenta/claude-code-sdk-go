@@ -363,7 +363,9 @@ func (t *SubprocessTransport) Receive(ctx context.Context) (<-chan map[string]an
 
 				// Check buffer size
 				if jsonBuffer.Len() > maxBufferSize {
-					t.logger.Error("JSON buffer exceeded maximum size", "size", jsonBuffer.Len())
+					if t.logger != nil {
+						t.logger.Error("JSON buffer exceeded maximum size", "size", jsonBuffer.Len())
+					}
 					jsonBuffer.Reset()
 					continue
 				}
@@ -390,14 +392,18 @@ func (t *SubprocessTransport) Receive(ctx context.Context) (<-chan map[string]an
 
 		// Check for errors
 		if err := scanner.Err(); err != nil {
-			t.logger.Debug("scanner error", "error", err)
+			if t.logger != nil {
+				t.logger.Debug("scanner error", "error", err)
+			}
 		}
 
 		// Wait for process to exit
 		if err := t.cmd.Wait(); err != nil {
 			if exitErr, ok := err.(*exec.ExitError); ok {
 				stderr := t.readStderr()
-				t.logger.Error("process exited with error", "code", exitErr.ExitCode(), "stderr", stderr)
+				if t.logger != nil {
+					t.logger.Error("process exited with error", "code", exitErr.ExitCode(), "stderr", stderr)
+				}
 			}
 		}
 	}()
@@ -449,24 +455,16 @@ func (t *SubprocessTransport) Close() error {
 		t.stdinClosed.Store(true)
 	}
 
-	// Terminate process
-	if t.cmd != nil && t.cmd.Process != nil {
-		// Try graceful termination first
-		t.cmd.Process.Signal(os.Interrupt)
-
-		// Wait with timeout
-		done := make(chan error, 1)
-		go func() {
-			done <- t.cmd.Wait()
-		}()
-
-		select {
-		case <-done:
-			// Process exited
-		case <-time.After(5 * time.Second):
-			// Force kill
+	// Wait for receive goroutine to finish first
+	// This ensures we don't have double Wait() calls
+	select {
+	case <-t.receiveDone:
+		// Receive goroutine has finished
+	case <-time.After(5 * time.Second):
+		// Timeout waiting for receive goroutine
+		if t.cmd != nil && t.cmd.Process != nil {
+			// Force terminate
 			t.cmd.Process.Kill()
-			<-done
 		}
 	}
 
