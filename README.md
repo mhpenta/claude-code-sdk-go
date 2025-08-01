@@ -1,15 +1,6 @@
 # Claude Code SDK for Go
 
-A Go SDK for interacting with Claude Code, providing programmatic access to Claude's capabilities through a clean, idiomatic Go interface.
-
-## Features
-
-- 🚀 **Simple API**: Easy-to-use interfaces for one-shot queries and interactive sessions
-- 🔄 **Streaming Support**: Real-time message streaming for responsive applications
-- 🎯 **Type Safety**: Fully typed messages and options
-- 🛡️ **Error Handling**: Comprehensive error types with sentinel errors
-- 🔧 **Flexible Configuration**: Extensive options for customizing behavior
-- 📝 **Context Support**: Full `context.Context` integration for cancellation and timeouts
+Go SDK for Claude Code. See the [Claude Code SDK documentation](https://docs.anthropic.com/en/docs/claude-code/sdk) for more information.
 
 ## Installation
 
@@ -17,15 +8,12 @@ A Go SDK for interacting with Claude Code, providing programmatic access to Clau
 go get github.com/mhpenta/claude-code-sdk-go
 ```
 
-### Prerequisites
-
-- Go 1.21 or later
-- Node.js installed
-- Claude Code CLI installed: `npm install -g @anthropic-ai/claude-code`
+**Prerequisites:**
+- Go 1.21+
+- Node.js 
+- Claude Code: `npm install -g @anthropic-ai/claude-code`
 
 ## Quick Start
-
-### Simple Query
 
 ```go
 package main
@@ -39,133 +27,203 @@ import (
 )
 
 func main() {
-    // Create client
     client, err := claudecode.New()
     if err != nil {
         log.Fatal(err)
     }
     defer client.Close()
     
-    // Send query
     messages, err := client.Query(context.Background(), "What is 2 + 2?")
     if err != nil {
         log.Fatal(err)
     }
     
-    // Process response
     for _, msg := range messages {
-        if m, ok := msg.(*claude.AssistantMessage); ok {
-            for _, block := range m.Content {
-                if block.Type == "text" && block.Text != nil {
-                    fmt.Printf("Claude: %s\n", *block.Text)
-                }
+        fmt.Printf("%+v\n", msg)
+    }
+}
+```
+
+## Usage
+
+### Basic Query
+
+```go
+// Simple query
+messages, err := client.Query(ctx, "Hello Claude")
+for _, msg := range messages {
+    if m, ok := msg.(*claudecode.AssistantMessage); ok {
+        for _, block := range m.Content {
+            if block.Type == "text" && block.Text != nil {
+                fmt.Println(*block.Text)
             }
         }
     }
 }
+
+// With options
+client, err := claudecode.New(
+    claudecode.WithSystemPrompt("You are a helpful assistant"),
+    claudecode.WithMaxTurns(1),
+)
 ```
 
 ### Streaming Responses
 
 ```go
 // Stream responses as they arrive
-msgChan, err := client.QueryStream(context.Background(), "Tell me a story")
+msgChan, err := client.QueryStream(ctx, "Tell me a story")
 if err != nil {
     log.Fatal(err)
 }
 
 for msg := range msgChan {
-    // Process each message as it arrives
-    fmt.Printf("Received: %T\n", msg)
+    switch m := msg.(type) {
+    case *claudecode.AssistantMessage:
+        // Process assistant response
+    case *claudecode.ResultMessage:
+        // Final result with cost and duration
+    }
 }
 ```
 
-### Interactive Session
+### Interactive Sessions
 
 ```go
 // Create an interactive session
-session, err := client.NewSession(context.Background())
+session, err := client.NewSession(ctx)
 if err != nil {
     log.Fatal(err)
 }
 defer session.Close()
 
-// Send message
-err = session.Send(context.Background(), "Let's play 20 questions")
-if err != nil {
-    log.Fatal(err)
-}
+// Send messages
+err = session.Send(ctx, "Let's solve a problem step by step")
 
-// Receive response
-messages, err := session.ReceiveOne(context.Background())
-if err != nil {
-    log.Fatal(err)
-}
+// Receive responses
+messages, err := session.ReceiveOne(ctx)
 ```
 
-## Configuration
-
-### Client Options
+### Using Tools
 
 ```go
-client, err := claude.New(
-    claude.WithModel("claude-3-opus-20240229"),
-    claude.WithSystemPrompt("You are a helpful assistant"),
-    claude.WithMaxTurns(10),
-    claude.WithPermissionMode(claude.PermissionModeAcceptEdits),
-    claude.WithWorkingDirectory("/path/to/project"),
-    claude.WithLogger(slog.Default()),
+client, err := claudecode.New(
+    claudecode.WithAllowedTools("Read", "Write", "Bash"),
+    claudecode.WithPermissionMode(claudecode.PermissionModeAcceptEdits),
+)
+
+messages, err := client.Query(ctx, "Create a hello.go file")
+```
+
+### Working Directory
+
+```go
+client, err := claudecode.New(
+    claudecode.WithWorkingDirectory("/path/to/project"),
 )
 ```
 
-### Available Options
+## API Reference
 
-- `WithModel(model)` - Set the Claude model to use
-- `WithSystemPrompt(prompt)` - Set system prompt
-- `WithMaxTurns(n)` - Limit conversation turns
-- `WithPermissionMode(mode)` - Control tool permissions
-- `WithWorkingDirectory(dir)` - Set working directory
-- `WithAllowedTools(tools...)` - Specify allowed tools
-- `WithLogger(logger)` - Set custom logger
-- `WithCLIPath(path)` - Override Claude CLI path
+### Client Interface
 
-## Message Types
+```go
+type Client interface {
+    Query(ctx context.Context, prompt string, opts ...QueryOption) ([]Message, error)
+    QueryStream(ctx context.Context, prompt string, opts ...QueryOption) (<-chan Message, error)
+    NewSession(ctx context.Context, opts ...SessionOption) (Session, error)
+    Close() error
+}
+```
 
-The SDK provides typed message structures:
+### Session Interface
 
-- `UserMessage` - Messages from the user
-- `AssistantMessage` - Claude's responses with content blocks
-- `SystemMessage` - System events and metadata
-- `ResultMessage` - Conversation summary with cost and usage
+```go
+type Session interface {
+    Send(ctx context.Context, message string) error
+    Receive(ctx context.Context) (<-chan Message, error)
+    ReceiveOne(ctx context.Context) ([]Message, error)
+    Interrupt(ctx context.Context) error
+    Close() error
+}
+```
+
+### Types
+
+See [claudecode/message.go](claudecode/message.go) for complete type definitions:
+- `Options` - Configuration options
+- `AssistantMessage`, `UserMessage`, `SystemMessage`, `ResultMessage` - Message types
+- `TextBlock`, `ToolUse`, `ToolResult` - Content blocks
 
 ## Error Handling
 
-The SDK provides comprehensive error handling with sentinel errors:
-
 ```go
-errors.Is(err, claude.ErrClaudeNotInstalled)  // CLI not found
-errors.Is(err, claude.ErrNotConnected)         // Not connected
-errors.Is(err, claude.ErrConnectionFailed)     // Connection failed
-errors.Is(err, claude.ErrInvalidMessage)       // Invalid message
+import "errors"
+
+// Sentinel errors
+var (
+    ErrClaudeNotInstalled = errors.New("claude-code: CLI not installed")
+    ErrNotConnected       = errors.New("claude-code: not connected")
+    ErrConnectionFailed   = errors.New("claude-code: connection failed")
+)
+
+// Error handling
+messages, err := client.Query(ctx, "Hello")
+if err != nil {
+    if errors.Is(err, claudecode.ErrClaudeNotInstalled) {
+        log.Fatal("Please install Claude Code")
+    }
+    if errors.Is(err, claudecode.ErrConnectionFailed) {
+        log.Fatal("Failed to connect to Claude")
+    }
+}
+
+// Process errors include exit codes
+if procErr, ok := err.(*claudecode.ProcessError); ok {
+    log.Printf("Process failed with exit code: %d", procErr.ExitCode)
+}
 ```
 
-## Architecture
+See [claudecode/errors.go](claudecode/errors.go) for all error types.
 
-The SDK follows a clean architecture with clear separation of concerns:
+## Configuration Options
 
-- **Client Interface**: High-level API for users
-- **Transport Layer**: Handles communication (subprocess, future: HTTP/gRPC)
-- **Message Types**: Type-safe message handling
-- **Options**: Flexible configuration system
+```go
+client, err := claudecode.New(
+    // Model selection
+    claudecode.WithModel("claude-3-opus-20240229"),
+    
+    // System prompts
+    claudecode.WithSystemPrompt("You are a coding assistant"),
+    
+    // Tool permissions
+    claudecode.WithAllowedTools("Read", "Write"),
+    claudecode.WithPermissionMode(claudecode.PermissionModeDefault),
+    
+    // Conversation limits
+    claudecode.WithMaxTurns(10),
+    
+    // Working directory
+    claudecode.WithWorkingDirectory("/path/to/project"),
+    
+    // Logging
+    claudecode.WithLogger(slog.Default()),
+)
+```
+
+## Available Tools
+
+See the [Claude Code documentation](https://docs.anthropic.com/en/docs/claude-code/settings#tools-available-to-claude) for a complete list of available tools.
+
+## Examples
+
+- [Simple Usage](examples/simple/) - Basic queries and streaming
+- [Code Analysis](examples/analyze-sdk/) - Analyze code architecture
+- [Code Modification](examples/improve-comment/) - Improve code documentation
+- [Documentation Review](examples/review-readmes/) - Review and update READMEs
+
+See the [examples directory](examples/) for more complete examples.
 
 ## License
 
-MIT License - see LICENSE file for details
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Acknowledgments
-
-This SDK is inspired by the official Python SDK and follows Go best practices for API design.
+MIT

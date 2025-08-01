@@ -76,7 +76,11 @@ func NewOneShotTransport(opts *Options, prompt string) *SubprocessTransport {
 	return t
 }
 
-// findCLI searches for the Claude CLI executable
+// findCLI locates the Claude CLI executable using the following priority:
+// 1. Custom path from options.CLIPath (if provided)
+// 2. System PATH via exec.LookPath
+// 3. Common installation locations (npm global, local bins, node_modules)
+// Returns the full path to the executable or an error if not found.
 func (t *SubprocessTransport) findCLI() (string, error) {
 	// Check if custom path is provided
 	if t.options.CLIPath != "" {
