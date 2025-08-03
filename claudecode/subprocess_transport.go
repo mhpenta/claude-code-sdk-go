@@ -406,7 +406,11 @@ func (t *SubprocessTransport) Receive(ctx context.Context) (<-chan map[string]an
 			if exitErr, ok := err.(*exec.ExitError); ok {
 				stderr := t.readStderr()
 				if t.logger != nil {
-					t.logger.Error("process exited with error", "code", exitErr.ExitCode(), "stderr", stderr)
+					var exitCode int = -1
+					if exitErr.ProcessState != nil {
+						exitCode = exitErr.ExitCode()
+					}
+					t.logger.Error("process exited with error", "code", exitCode, "stderr", stderr)
 				}
 			}
 		}
