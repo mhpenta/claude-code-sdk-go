@@ -253,7 +253,9 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 	}
 
 	t.connected.Store(true)
-	t.logger.Debug("subprocess started", "pid", t.cmd.Process.Pid)
+	if t.logger != nil {
+		t.logger.Debug("subprocess started", "pid", t.cmd.Process.Pid)
+	}
 
 	// Start stdin streaming for streaming mode
 	if t.isStreaming && t.promptChan != nil {
@@ -297,7 +299,9 @@ func (t *SubprocessTransport) streamToStdin(ctx context.Context) {
 			}
 
 			if err := encoder.Encode(msg); err != nil {
-				t.logger.Debug("error writing to stdin", "error", err)
+				if t.logger != nil {
+					t.logger.Debug("error writing to stdin", "error", err)
+				}
 				return
 			}
 		}
