@@ -179,12 +179,25 @@ func (c *client) NewSession(ctx context.Context, opts ...SessionOption) (Session
 		return nil, err
 	}
 
-	return &session{
+	sess := &session{
 		transport:  transport,
 		logger:     c.logger.With("component", "session"),
 		ctx:        ctx,
 		promptChan: promptChan,
-	}, nil
+	}
+
+	// Monitor context cancellation
+	go func() {
+		<-ctx.Done()
+		// If context is cancelled, ensure cleanup happens
+		sess.logger.Debug("context cancelled, triggering session cleanup")
+		err := sess.Close()
+		if err != nil {
+			return
+		}
+	}()
+
+	return sess, nil
 }
 
 // Close closes the client
@@ -218,7 +231,7 @@ func (s *session) Send(ctx context.Context, message string) error {
 	if sessionID == "" {
 		sessionID = "default"
 	}
-	
+
 	msg := map[string]any{
 		"type": "user",
 		"message": map[string]any{
@@ -253,7 +266,7 @@ func (s *session) SendMessage(ctx context.Context, msg Message) error {
 	if sessionID == "" {
 		sessionID = "default"
 	}
-	
+
 	rawMsg := map[string]any{
 		"type": "user",
 		"message": map[string]any{

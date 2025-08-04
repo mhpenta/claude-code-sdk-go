@@ -253,9 +253,7 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 	}
 
 	t.connected.Store(true)
-	if t.logger != nil {
-		t.logger.Debug("subprocess started", "pid", t.cmd.Process.Pid)
-	}
+	t.logger.Debug("subprocess started", "pid", t.cmd.Process.Pid)
 
 	// Start stdin streaming for streaming mode
 	if t.isStreaming && t.promptChan != nil {
@@ -403,15 +401,33 @@ func (t *SubprocessTransport) Receive(ctx context.Context) (<-chan map[string]an
 
 		// Wait for process to exit
 		if err := t.cmd.Wait(); err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				stderr := t.readStderr()
-				if t.logger != nil {
-					var exitCode int = -1
-					if exitErr.ProcessState != nil {
-						exitCode = exitErr.ExitCode()
-					}
-					t.logger.Error("process exited with error", "code", exitCode, "stderr", stderr)
+			// Check if we're shutting down normally
+			if !t.connected.Load() {
+				// Expected shutdown, don't log as error
+				return
+			}
+
+			if exitErr, ok := err.(*exec.ExitError); ok && exitErr != nil {
+				if t == nil {
+					return
 				}
+
+				stderr := t.readStderr()
+
+				if t.logger != nil && exitErr.ProcessState != nil {
+					exitCode := exitErr.ExitCode()
+					if exitCode != 0 {
+						t.logger.Error("process exited with error", "code", exitCode, "stderr", stderr)
+					} else {
+						t.logger.Debug("process exited normally", "code", exitCode)
+					}
+				}
+			} else if t != nil && t.logger != nil {
+				t.logger.Error("process wait error", "error", err)
+			}
+		} else {
+			if t.logger != nil {
+				t.logger.Debug("process exited successfully")
 			}
 		}
 	}()
@@ -472,7 +488,10 @@ func (t *SubprocessTransport) Close() error {
 		// Timeout waiting for receive goroutine
 		if t.cmd != nil && t.cmd.Process != nil {
 			// Force terminate
-			t.cmd.Process.Kill()
+			err := t.cmd.Process.Kill()
+			if err != nil {
+				return err
+			}
 		}
 	}
 
