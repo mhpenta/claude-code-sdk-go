@@ -400,8 +400,18 @@ func (t *SubprocessTransport) Receive(ctx context.Context) (<-chan map[string]an
 			}
 		}
 
+		// Use a defer to catch any potential panics during exit handling
+		defer func() {
+			if r := recover(); r != nil {
+				// If we panic here, just silently ignore it
+				// The process is exiting anyway
+				fmt.Fprintf(os.Stderr, "recovered from panic during subprocess exit: %v\n", r)
+			}
+		}()
+		
 		// Wait for process to exit
-		if err := t.cmd.Wait(); err != nil {
+		err := t.cmd.Wait()
+		if err != nil {
 			// Only log actual errors, not normal exits
 			// Check if this is a real error or just normal termination
 			if !t.connected.Load() {
