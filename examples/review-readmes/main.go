@@ -35,8 +35,8 @@ func main() {
 		claudecode.WithLogger(logger),
 		claudecode.WithSystemPrompt("You are a technical documentation expert for Go projects. Focus on clarity, accuracy, and completeness."),
 		claudecode.WithPermissionMode(claudecode.PermissionModeAcceptEdits), // Auto-accept edits
-		claudecode.WithAddDirs(projectRoot), // Include entire project for context
-		claudecode.WithMaxTurns(10),         // Allow multiple edits if needed
+		claudecode.WithAddDirs(projectRoot),                                 // Include entire project for context
+		claudecode.WithMaxTurns(10),                                         // Allow multiple edits if needed
 	)
 	if err != nil {
 		log.Fatal("Failed to create client:", err)
@@ -51,7 +51,7 @@ func main() {
 	}
 
 	fmt.Println("🔍 Reviewing README files...")
-	fmt.Println("----------------------------\n")
+	fmt.Println("----------------------------")
 
 	// Track edits made
 	editsCount := 0

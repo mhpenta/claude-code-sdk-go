@@ -190,11 +190,8 @@ func (c *client) NewSession(ctx context.Context, opts ...SessionOption) (Session
 	go func() {
 		<-ctx.Done()
 		// If context is cancelled, ensure cleanup happens
-		sess.logger.Debug("context cancelled, triggering session cleanup")
-		err := sess.Close()
-		if err != nil {
-			return
-		}
+		// Don't log here as it might race with other cleanup
+		_ = sess.Close()
 	}()
 
 	return sess, nil

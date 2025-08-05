@@ -253,7 +253,7 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 	}
 
 	t.connected.Store(true)
-	t.logger.Debug("subprocess started", "pid", t.cmd.Process.Pid)
+	t.logger.Debug("subprocess started", slog.Int("pid", t.cmd.Process.Pid))
 
 	// Start stdin streaming for streaming mode
 	if t.isStreaming && t.promptChan != nil {
@@ -298,7 +298,7 @@ func (t *SubprocessTransport) streamToStdin(ctx context.Context) {
 
 			if err := encoder.Encode(msg); err != nil {
 				if t.logger != nil {
-					t.logger.Debug("error writing to stdin", "error", err)
+					t.logger.Debug("error writing to stdin", slog.Any("error", err))
 				}
 				return
 			}
@@ -366,7 +366,8 @@ func (t *SubprocessTransport) Receive(ctx context.Context) (<-chan map[string]an
 				// Check buffer size
 				if jsonBuffer.Len() > maxBufferSize {
 					if t.logger != nil {
-						t.logger.Error("JSON buffer exceeded maximum size", "size", jsonBuffer.Len())
+						t.logger.Error("JSON buffer exceeded maximum size", 
+							slog.Int("size", jsonBuffer.Len()))
 					}
 					jsonBuffer.Reset()
 					continue
@@ -395,7 +396,7 @@ func (t *SubprocessTransport) Receive(ctx context.Context) (<-chan map[string]an
 		// Check for errors
 		if err := scanner.Err(); err != nil {
 			if t.logger != nil {
-				t.logger.Debug("scanner error", "error", err)
+				t.logger.Debug("scanner error", slog.Any("error", err))
 			}
 		}
 
@@ -412,18 +413,23 @@ func (t *SubprocessTransport) Receive(ctx context.Context) (<-chan map[string]an
 					return
 				}
 
-				stderr := t.readStderr()
-
+				// Defensive: only read stderr if logger exists and will use it
+				var stderr string
 				if t.logger != nil && exitErr.ProcessState != nil {
+					stderr = t.readStderr()
 					exitCode := exitErr.ExitCode()
 					if exitCode != 0 {
-						t.logger.Error("process exited with error", "code", exitCode, "stderr", stderr)
+						// Use slog's structured logging to avoid any string formatting issues
+						t.logger.Error("process exited with error", 
+							slog.Int("code", exitCode),
+							slog.String("stderr", stderr))
 					} else {
-						t.logger.Debug("process exited normally", "code", exitCode)
+						t.logger.Debug("process exited normally", slog.Int("code", exitCode))
 					}
 				}
 			} else if t != nil && t.logger != nil {
-				t.logger.Error("process wait error", "error", err)
+				// Some other error that's not an ExitError
+				t.logger.Error("process wait error", slog.Any("error", err))
 			}
 		} else {
 			if t.logger != nil {
