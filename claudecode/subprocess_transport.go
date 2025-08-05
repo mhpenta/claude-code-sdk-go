@@ -402,8 +402,27 @@ func (t *SubprocessTransport) Receive(ctx context.Context) (<-chan map[string]an
 
 		// Wait for process to exit
 		if err := t.cmd.Wait(); err != nil {
-			// Switch to global logger if we have an error during shutdown
-			slog.Error("subprocess exited with error", "error", err)
+			// Only log actual errors, not normal exits
+			// Check if this is a real error or just normal termination
+			if !t.connected.Load() {
+				// We're disconnecting, this is expected
+				return
+			}
+			
+			// Check if it's an exit error with a non-zero code
+			if _, ok := err.(*exec.ExitError); ok {
+				// Process exited with an error code
+				// But during shutdown, this might be expected (e.g., SIGTERM)
+				// Only log if we're still supposed to be connected
+				if t.connected.Load() {
+					// Use fmt.Fprintf to stderr to avoid any slog issues
+					fmt.Fprintf(os.Stderr, "subprocess exited with error: %v\n", err)
+				}
+			} else {
+				// Some other error (not an exit error)
+				// This might be important, so log it to stderr
+				fmt.Fprintf(os.Stderr, "subprocess wait error: %v\n", err)
+			}
 		}
 	}()
 
