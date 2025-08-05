@@ -366,7 +366,7 @@ func (t *SubprocessTransport) Receive(ctx context.Context) (<-chan map[string]an
 				// Check buffer size
 				if jsonBuffer.Len() > maxBufferSize {
 					if t.logger != nil {
-						t.logger.Error("JSON buffer exceeded maximum size", 
+						t.logger.Error("JSON buffer exceeded maximum size",
 							slog.Int("size", jsonBuffer.Len()))
 					}
 					jsonBuffer.Reset()
@@ -402,39 +402,8 @@ func (t *SubprocessTransport) Receive(ctx context.Context) (<-chan map[string]an
 
 		// Wait for process to exit
 		if err := t.cmd.Wait(); err != nil {
-			// Check if we're shutting down normally
-			if !t.connected.Load() {
-				// Expected shutdown, don't log as error
-				return
-			}
-
-			if exitErr, ok := err.(*exec.ExitError); ok && exitErr != nil {
-				if t == nil {
-					return
-				}
-
-				// Defensive: only read stderr if logger exists and will use it
-				var stderr string
-				if t.logger != nil && exitErr.ProcessState != nil {
-					stderr = t.readStderr()
-					exitCode := exitErr.ExitCode()
-					if exitCode != 0 {
-						// Use slog's structured logging to avoid any string formatting issues
-						t.logger.Error("process exited with error", 
-							slog.Int("code", exitCode),
-							slog.String("stderr", stderr))
-					} else {
-						t.logger.Debug("process exited normally", slog.Int("code", exitCode))
-					}
-				}
-			} else if t != nil && t.logger != nil {
-				// Some other error that's not an ExitError
-				t.logger.Error("process wait error", slog.Any("error", err))
-			}
-		} else {
-			if t.logger != nil {
-				t.logger.Debug("process exited successfully")
-			}
+			// Switch to global logger if we have an error during shutdown
+			slog.Error("subprocess exited with error", "error", err)
 		}
 	}()
 
