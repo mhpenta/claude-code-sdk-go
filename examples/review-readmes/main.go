@@ -14,51 +14,44 @@ import (
 )
 
 func main() {
-	// Get the project root directory
 	projectRoot, err := filepath.Abs("../..")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Create a logger that shows info level
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
 
-	fmt.Println("📚 Claude Code SDK - README Review & Update")
-	fmt.Println("==========================================")
+	fmt.Println("README Review & Update")
+	fmt.Println("======================")
 	fmt.Printf("Project root: %s\n\n", projectRoot)
 
-	// Create client with permission to edit files
 	client, err := claudecode.New(
 		claudecode.WithWorkingDirectory(projectRoot),
 		claudecode.WithLogger(logger),
-		claudecode.WithSystemPrompt("You are a technical documentation expert for Go projects. Focus on clarity, accuracy, and completeness."),
-		claudecode.WithPermissionMode(claudecode.PermissionModeAcceptEdits), // Auto-accept edits
-		claudecode.WithAddDirs(projectRoot), // Include entire project for context
-		claudecode.WithMaxTurns(10),         // Allow multiple edits if needed
+		claudecode.WithSystemPrompt("Review and improve technical documentation for clarity and accuracy."),
+		claudecode.WithPermissionMode(claudecode.PermissionModeAcceptEdits),
+		claudecode.WithAddDirs(projectRoot),
+		claudecode.WithMaxTurns(10),
 	)
 	if err != nil {
 		log.Fatal("Failed to create client:", err)
 	}
 	defer client.Close()
 
-	// Use streaming to show progress
 	ctx := context.Background()
 	msgChan, err := client.QueryStream(ctx, buildPrompt())
 	if err != nil {
 		log.Fatal("Failed to start query:", err)
 	}
 
-	fmt.Println("🔍 Reviewing README files...")
+	fmt.Println("Reviewing README files...")
 	fmt.Println("----------------------------")
 
-	// Track edits made
 	editsCount := 0
 	filesEdited := make(map[string]bool)
 	startTime := time.Now()
-
-	// Process messages
 	for msg := range msgChan {
 		switch m := msg.(type) {
 		case *claudecode.AssistantMessage:
@@ -66,7 +59,6 @@ func main() {
 				switch block.Type {
 				case "text":
 					if block.Text != nil {
-						// Print Claude's analysis
 						fmt.Print(*block.Text)
 					}
 				case "tool_use":
@@ -80,46 +72,44 @@ func main() {
 			}
 
 		case *claudecode.SystemMessage:
-			// Show tool usage
 			if m.Subtype == "tool_use" {
 				if toolName, ok := m.Data["name"].(string); ok {
 					switch toolName {
 					case "Read":
-						fmt.Println("\n📖 Reading file...")
+						fmt.Println("\nReading file...")
 					case "Edit":
-						fmt.Println("\n✏️  Applying edit...")
+						fmt.Println("\nApplying edit...")
 					case "Grep":
-						fmt.Println("\n🔎 Searching...")
+						fmt.Println("\nSearching...")
 					}
 				}
 			}
 
 		case *claudecode.ResultMessage:
-			// Final summary
 			duration := time.Since(startTime)
 			fmt.Println("\n\n" + strings.Repeat("=", 50))
-			fmt.Println("📊 Review Summary:")
+			fmt.Println("Review Summary:")
 			fmt.Printf("- Duration: %.2f seconds\n", duration.Seconds())
 			fmt.Printf("- Total edits made: %d\n", editsCount)
 			fmt.Printf("- Files modified: %d\n", len(filesEdited))
 
 			if len(filesEdited) > 0 {
-				fmt.Println("\n📝 Modified files:")
+				fmt.Println("\nModified files:")
 				for file := range filesEdited {
 					fmt.Printf("  - %s\n", file)
 				}
 			}
 
 			if m.TotalCostUSD != nil {
-				fmt.Printf("\n💰 Cost: $%.4f\n", *m.TotalCostUSD)
+				fmt.Printf("\nCost: $%.4f\n", *m.TotalCostUSD)
 			}
 
 			if !m.IsError && editsCount > 0 {
-				fmt.Println("\n✅ README files successfully reviewed and updated!")
+				fmt.Println("\nREADME files successfully reviewed and updated!")
 			} else if !m.IsError && editsCount == 0 {
-				fmt.Println("\n✅ README files reviewed - no updates needed!")
+				fmt.Println("\nREADME files reviewed - no updates needed!")
 			} else {
-				fmt.Println("\n❌ Review completed with errors")
+				fmt.Println("\nReview completed with errors")
 			}
 		}
 	}

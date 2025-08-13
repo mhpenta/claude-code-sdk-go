@@ -11,27 +11,24 @@ import (
 )
 
 func main() {
-	// Get the project root directory
 	projectRoot, err := filepath.Abs("../..")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Create a logger that only shows errors
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
 
-	fmt.Println("📝 Claude Code SDK - Comment Improvement Example")
-	fmt.Println("==============================================")
+	fmt.Println("Comment Improvement Example")
+	fmt.Println("===========================")
 	fmt.Printf("Project root: %s\n\n", projectRoot)
 
-	// Create client with permission to edit files
 	client, err := claudecode.New(
 		claudecode.WithWorkingDirectory(projectRoot),
 		claudecode.WithLogger(logger),
-		claudecode.WithSystemPrompt("You are a Go documentation expert. Be concise and focus on improving code documentation."),
-		claudecode.WithPermissionMode(claudecode.PermissionModeAcceptEdits), // Auto-accept edits
+		claudecode.WithSystemPrompt("Improve Go code documentation and comments."),
+		claudecode.WithPermissionMode(claudecode.PermissionModeAcceptEdits),
 		claudecode.WithAddDirs(filepath.Join(projectRoot, "claudecode")),
 	)
 	if err != nil {
@@ -39,16 +36,14 @@ func main() {
 	}
 	defer client.Close()
 
-	// Create a session for interactive feedback
 	session, err := client.NewSession(context.Background())
 	if err != nil {
 		log.Fatal("Failed to create session:", err)
 	}
 	defer session.Close()
 
-	fmt.Println("🔍 Searching for a comment to improve...")
+	fmt.Println("\nSearching for improvable comments...")
 
-	// Ask Claude to find and improve a comment
 	prompt := `Please search through the Go SDK code in the claude/ directory and:
 1. Find ONE comment that could be improved (make it more clear, add missing context, fix grammar, etc.)
 2. Show me the current comment and file location
@@ -62,9 +57,8 @@ Focus on comments that document functions, types, or important logic. Choose som
 		log.Fatal("Failed to send prompt:", err)
 	}
 
-	// Receive and display the response
-	fmt.Println("\n📋 Claude's Analysis:")
-	fmt.Println("--------------------")
+	fmt.Println("\nAnalysis:")
+	fmt.Println("---------")
 
 	var hasEdit bool
 	msgChan, err := session.Receive(context.Background())
@@ -84,7 +78,7 @@ Focus on comments that document functions, types, or important logic. Choose som
 				case "tool_use":
 					if block.Tool != nil && block.Tool.Name == "Edit" {
 						hasEdit = true
-						fmt.Printf("\n\n✏️  Edit Applied to: %v\n", block.Tool.Input["file_path"])
+						fmt.Printf("\n\nEdit applied to: %v\n", block.Tool.Input["file_path"])
 					}
 				}
 			}
@@ -95,16 +89,16 @@ Focus on comments that document functions, types, or important logic. Choose som
 				}
 			}
 		case *claudecode.ResultMessage:
-			fmt.Printf("\n\n📊 Summary:")
+			fmt.Printf("\n\nSummary:")
 			fmt.Printf("\n- Duration: %dms", m.DurationMS)
 			if m.TotalCostUSD != nil {
 				fmt.Printf("\n- Cost: $%.4f", *m.TotalCostUSD)
 			}
 			fmt.Printf("\n- Success: %v", !m.IsError)
 			if hasEdit {
-				fmt.Println("\n\n✅ Comment successfully improved!")
+				fmt.Println("\n\nComment successfully improved!")
 			} else {
-				fmt.Println("\n\n⚠️  No edits were made")
+				fmt.Println("\n\nNo edits were made")
 			}
 			fmt.Println()
 			return

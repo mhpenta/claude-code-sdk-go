@@ -80,7 +80,9 @@ func NewOneShotTransport(opts *Options, prompt string) *SubprocessTransport {
 // 1. Custom path from options.CLIPath (if provided)
 // 2. System PATH via exec.LookPath
 // 3. Common installation locations (npm global, local bins, node_modules)
-// Returns the full path to the executable or an error if not found.
+// Returns the full path to the executable, or a detailed error with installation
+// instructions if not found. The error messages include specific guidance for
+// installing Node.js (if missing) and the Claude Code package.
 func (t *SubprocessTransport) findCLI() (string, error) {
 	// Check if custom path is provided
 	if t.options.CLIPath != "" {
@@ -90,7 +92,6 @@ func (t *SubprocessTransport) findCLI() (string, error) {
 		return "", fmt.Errorf("claude CLI not found at specified path: %s", t.options.CLIPath)
 	}
 
-	// Check PATH
 	if path, err := exec.LookPath("claude"); err == nil {
 		return path, nil
 	}
@@ -226,7 +227,6 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 		t.cmd.Dir = t.options.WorkingDirectory
 	}
 
-	// Set up pipes
 	t.stdin, err = t.cmd.StdinPipe()
 	if err != nil {
 		t.cleanup()
@@ -241,7 +241,6 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 
 	t.cmd.Stderr = t.stderrFile
 
-	// Start the process
 	if err := t.cmd.Start(); err != nil {
 		t.cleanup()
 		if t.options.WorkingDirectory != "" {
@@ -255,7 +254,6 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 	t.connected.Store(true)
 	t.logger.Debug("subprocess started", slog.Int("pid", t.cmd.Process.Pid))
 
-	// Start stdin streaming for streaming mode
 	if t.isStreaming && t.promptChan != nil {
 		go t.streamToStdin(ctx)
 	} else if !t.isStreaming {
@@ -393,14 +391,12 @@ func (t *SubprocessTransport) Receive(ctx context.Context) (<-chan map[string]an
 			}
 		}
 
-		// Check for errors
 		if err := scanner.Err(); err != nil {
 			if t.logger != nil {
 				t.logger.Debug("scanner error", slog.Any("error", err))
 			}
 		}
 
-		// Use a defer to catch any potential panics during exit handling
 		defer func() {
 			if r := recover(); r != nil {
 				// If we panic here, just silently ignore it
@@ -408,7 +404,7 @@ func (t *SubprocessTransport) Receive(ctx context.Context) (<-chan map[string]an
 				fmt.Fprintf(os.Stderr, "recovered from panic during subprocess exit: %v\n", r)
 			}
 		}()
-		
+
 		// Wait for process to exit
 		err := t.cmd.Wait()
 		if err != nil {
@@ -418,18 +414,19 @@ func (t *SubprocessTransport) Receive(ctx context.Context) (<-chan map[string]an
 				// We're disconnecting, this is expected
 				return
 			}
-			
+
 			// Check if it's an exit error with a non-zero code
-			if _, ok := err.(*exec.ExitError); ok {
-				// Process exited with an error code
-				// But during shutdown, this might be expected (e.g., SIGTERM)
-				// Only log if we're still supposed to be connected
+			if exitErr, ok := err.(*exec.ExitError); ok {
 				if t.connected.Load() {
-					// Use fmt.Fprintf to stderr to avoid any slog issues
-					fmt.Fprintf(os.Stderr, "subprocess exited with error: %v\n", err)
+					stderr := t.readStderr()
+					if stderr != "" {
+						fmt.Fprintf(os.Stderr, "Claude Code failed with exit status %d\n", exitErr.ExitCode())
+						fmt.Fprintf(os.Stderr, "Error details:\n%s\n", stderr)
+					} else {
+						fmt.Fprintf(os.Stderr, "subprocess exited with error: %v\n", err)
+					}
 				}
 			} else {
-				// Some other error (not an exit error)
 				// This might be important, so log it to stderr
 				fmt.Fprintf(os.Stderr, "subprocess wait error: %v\n", err)
 			}

@@ -12,26 +12,23 @@ import (
 )
 
 func main() {
-	// Get the project root directory (two levels up from examples/self-analysis)
 	projectRoot, err := filepath.Abs("../..")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Create a logger
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelWarn, // Only show warnings and errors
+		Level: slog.LevelWarn,
 	}))
 
-	fmt.Println("🔍 Claude Code SDK Self-Analysis")
-	fmt.Println("================================")
+	fmt.Println("SDK Analysis")
+	fmt.Println("============")
 	fmt.Printf("Project root: %s\n\n", projectRoot)
 
-	// Create client with project directory context
 	client, err := claudecode.New(
 		claudecode.WithWorkingDirectory(projectRoot),
 		claudecode.WithLogger(logger),
-		claudecode.WithSystemPrompt("You are a Go code reviewer. Be concise and focus on important observations."),
+		claudecode.WithSystemPrompt("Focus on Go best practices and architecture patterns."),
 		claudecode.WithPermissionMode(claudecode.PermissionModeDefault),
 		claudecode.WithAddDirs(filepath.Join(projectRoot, "claudecode")),
 	)
@@ -40,20 +37,19 @@ func main() {
 	}
 	defer client.Close()
 
-	// Analyze the SDK architecture
-	fmt.Println("📊 Analyzing SDK Architecture...")
+	fmt.Println("\nAnalyzing architecture...")
 	if err := analyzeArchitecture(client); err != nil {
 		log.Fatal("Architecture analysis failed:", err)
 	}
 
-	// Review code quality
-	fmt.Println("\n💎 Reviewing Code Quality...")
+
+	fmt.Println("\nReviewing code quality...")
 	if err := reviewCodeQuality(client); err != nil {
 		log.Fatal("Code quality review failed:", err)
 	}
 
-	// Suggest improvements
-	fmt.Println("\n🚀 Suggesting Improvements...")
+
+	fmt.Println("\nGenerating improvement suggestions...")
 	if err := suggestImprovements(client); err != nil {
 		log.Fatal("Improvement suggestions failed:", err)
 	}
@@ -111,7 +107,6 @@ func suggestImprovements(client claudecode.Client) error {
 
 For each suggestion, briefly explain why it's important.`
 
-	// Use streaming for this one to show real-time output
 	msgChan, err := client.QueryStream(ctx, prompt)
 	if err != nil {
 		return fmt.Errorf("query stream failed: %w", err)
@@ -131,9 +126,9 @@ func printResponse(messages []claudecode.Message) {
 				}
 			}
 		case *claudecode.ResultMessage:
-			fmt.Printf("\n⏱️  Duration: %dms", m.DurationMS)
+			fmt.Printf("\nDuration: %dms", m.DurationMS)
 			if m.TotalCostUSD != nil {
-				fmt.Printf(" | 💰 Cost: $%.4f", *m.TotalCostUSD)
+				fmt.Printf(" | Cost: $%.4f", *m.TotalCostUSD)
 			}
 			fmt.Println()
 		}
@@ -154,9 +149,9 @@ func printStreamingResponse(msgChan <-chan claudecode.Message) {
 			}
 		case *claudecode.ResultMessage:
 			// Print summary at the end
-			fmt.Printf("\n\n⏱️  Duration: %dms", m.DurationMS)
+			fmt.Printf("\n\nDuration: %dms", m.DurationMS)
 			if m.TotalCostUSD != nil {
-				fmt.Printf(" | 💰 Cost: $%.4f", *m.TotalCostUSD)
+				fmt.Printf(" | Cost: $%.4f", *m.TotalCostUSD)
 			}
 			fmt.Println()
 		}

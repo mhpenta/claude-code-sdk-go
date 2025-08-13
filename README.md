@@ -191,7 +191,7 @@ See [claudecode/errors.go](claudecode/errors.go) for all error types.
 ```go
 client, err := claudecode.New(
     // Model selection
-    claudecode.WithModel("claude-3-opus-20240229"),
+    claudecode.WithModel("claude-opus-4-1-20250805"),
     
     // System prompts
     claudecode.WithSystemPrompt("You are a coding assistant"),
@@ -217,7 +217,6 @@ See the [Claude Code documentation](https://docs.anthropic.com/en/docs/claude-co
 
 ## Examples
 
-- [Simple Usage](examples/simple/) - Basic queries and streaming
 - [Code Analysis](examples/analyze-sdk/) - Analyze code architecture
 - [Code Modification](examples/improve-comment/) - Improve code documentation
 - [Documentation Review](examples/review-readmes/) - Review and update READMEs
