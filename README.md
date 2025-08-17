@@ -65,6 +65,8 @@ for _, msg := range messages {
 client, err := claudecode.New(
     claudecode.WithSystemPrompt("You are a helpful assistant"),
     claudecode.WithMaxTurns(1),
+    claudecode.WithAllowedTools("Read", "Write"),
+    claudecode.WithPermissionMode(claudecode.PermissionModeAcceptEdits),
 )
 ```
 
@@ -195,16 +197,37 @@ client, err := claudecode.New(
     
     // System prompts
     claudecode.WithSystemPrompt("You are a coding assistant"),
+    claudecode.WithAppendSystemPrompt("Always format code properly"),
     
     // Tool permissions
     claudecode.WithAllowedTools("Read", "Write"),
+    claudecode.WithDisallowedTools("Bash"),
+    claudecode.WithMCPTools("filesystem", "database"),
     claudecode.WithPermissionMode(claudecode.PermissionModeDefault),
+    claudecode.WithPermissionPromptToolName("custom-tool"),
     
     // Conversation limits
     claudecode.WithMaxTurns(10),
+    claudecode.WithMaxThinkingTokens(8000),
     
-    // Working directory
+    // Working directory and context
     claudecode.WithWorkingDirectory("/path/to/project"),
+    claudecode.WithAddDirs("./src", "./docs"),
+    
+    // Session management
+    claudecode.WithContinue(true),
+    claudecode.WithResume("conversation-id-123"),
+    claudecode.WithSettings("/path/to/settings.json"),
+    
+    // MCP Server integration
+    claudecode.WithMCPServer("filesystem", claudecode.MCPServer{
+        Type:    claudecode.MCPServerTypeStdio,
+        Command: "npx",
+        Args:    []string{"@modelcontextprotocol/server-filesystem", "/path/to/allowed/files"},
+    }),
+    
+    // CLI configuration
+    claudecode.WithCLIPath("/custom/path/to/claude"),
     
     // Logging
     claudecode.WithLogger(slog.Default()),

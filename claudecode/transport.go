@@ -70,7 +70,6 @@ type Session interface {
 	Close() error
 }
 
-// Ensure interfaces implement io.Closer where appropriate
 var (
 	_ io.Closer = (Transport)(nil)
 	_ io.Closer = (Client)(nil)

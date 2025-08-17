@@ -186,7 +186,6 @@ func ParseMessage(data map[string]any) (Message, error) {
 		return nil, fmt.Errorf("%w: missing or invalid type field", ErrInvalidMessage)
 	}
 
-	// Marshal back to JSON for proper unmarshaling
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to re-marshal: %v", ErrInvalidMessage, err)

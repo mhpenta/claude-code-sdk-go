@@ -48,16 +48,13 @@ func (c *client) Query(ctx context.Context, prompt string, opts ...QueryOption) 
 		opt(qOpts)
 	}
 
-	// Create one-shot transport
 	transport := NewOneShotTransport(c.options, prompt)
 
-	// Connect
 	if err := transport.Connect(ctx); err != nil {
 		return nil, err
 	}
 	defer transport.Close()
 
-	// Receive messages
 	msgChan, err := transport.Receive(ctx)
 	if err != nil {
 		return nil, err
@@ -71,8 +68,6 @@ func (c *client) Query(ctx context.Context, prompt string, opts ...QueryOption) 
 			continue
 		}
 		messages = append(messages, msg)
-
-		// Stop after ResultMessage
 		if _, ok := msg.(*ResultMessage); ok {
 			break
 		}

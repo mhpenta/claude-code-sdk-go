@@ -21,16 +21,7 @@ var (
 
 	// ErrJSONDecode is returned when JSON decoding fails
 	ErrJSONDecode = errors.New("claude-code: JSON decode error")
-
-	// ErrProcessExited is returned when the Claude process exits unexpectedly
-	ErrProcessExited = errors.New("claude-code: process exited unexpectedly")
-
-	// ErrInterrupted is returned when an operation is interrupted
-	ErrInterrupted = errors.New("claude-code: operation interrupted")
-
-	// ErrTimeout is returned when an operation times out
-	ErrTimeout = errors.New("claude-code: operation timed out")
-
+	
 	// ErrStreamClosed is returned when trying to use a closed stream
 	ErrStreamClosed = errors.New("claude-code: stream closed")
 )

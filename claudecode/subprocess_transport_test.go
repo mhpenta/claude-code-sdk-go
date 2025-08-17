@@ -112,7 +112,7 @@ func TestSubprocessEarlyClose(t *testing.T) {
 	// Close early after a short delay
 	time.Sleep(1 * time.Second)
 	t.Log("Closing transport early...")
-	
+
 	if err := transport.Close(); err != nil {
 		t.Errorf("Error closing transport: %v", err)
 	}
@@ -158,4 +158,112 @@ func TestSubprocessNilLogger(t *testing.T) {
 	}
 
 	t.Log("Nil logger test completed without panic")
+}
+
+// TestSubprocessFailToStart tests the case where the process doesn't even start
+func TestSubprocessFailToStart(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+
+	tests := []struct {
+		name    string
+		options *Options
+	}{
+		{
+			name: "InvalidCLIPath",
+			options: &Options{
+				Logger:  logger,
+				CLIPath: "/does/not/exist/claude",
+			},
+		},
+		{
+			name: "InvalidWorkingDirectory",
+			options: &Options{
+				Logger:           logger,
+				WorkingDirectory: "/does/not/exist/dir",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			transport := NewOneShotTransport(tt.options, "test")
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			// This should fail
+			err := transport.Connect(ctx)
+			if err == nil {
+				t.Fatal("Expected Connect to fail, but it succeeded")
+			}
+			t.Logf("Connect failed as expected: %v", err)
+
+			err = transport.Close()
+			if err != nil {
+				t.Logf("Close returned error: %v", err)
+			}
+			time.Sleep(100 * time.Millisecond)
+			t.Log("Test completed without panic")
+		})
+	}
+}
+
+// TestSubprocessPanicScenarios tests various scenarios that might cause panics
+func TestSubprocessPanicScenarios(t *testing.T) {
+	t.Run("NilLogger", func(t *testing.T) {
+		opts := &Options{
+			Logger:  nil, // explicitly nil
+			CLIPath: "/does/not/exist/claude",
+		}
+		transport := NewOneShotTransport(opts, "test")
+		ctx := context.Background()
+		_ = transport.Connect(ctx)
+		_ = transport.Close()
+		t.Log("Nil logger test completed without panic")
+	})
+
+	// Test rapid close after connect
+	t.Run("RapidClose", func(t *testing.T) {
+		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		}))
+		opts := &Options{
+			Logger: logger,
+		}
+		transport := NewOneShotTransport(opts, "test")
+		ctx := context.Background()
+		if err := transport.Connect(ctx); err != nil {
+			t.Logf("Connect failed: %v", err)
+			return
+		}
+		_ = transport.Close()
+		t.Log("Rapid close test completed without panic")
+	})
+
+	t.Run("ContextCancelDuringReceive", func(t *testing.T) {
+		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		}))
+		opts := &Options{
+			Logger: logger,
+		}
+		transport := NewOneShotTransport(opts, "say hello")
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		if err := transport.Connect(ctx); err != nil {
+			t.Logf("Connect failed: %v", err)
+			return
+		}
+		_, err := transport.Receive(ctx)
+		if err != nil {
+			t.Logf("Receive failed: %v", err)
+			return
+		}
+		cancel()
+		time.Sleep(100 * time.Millisecond)
+		_ = transport.Close()
+		t.Log("Context cancel test completed without panic")
+	})
 }

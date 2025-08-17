@@ -15,9 +15,6 @@ const (
 
 	// PermissionModeAcceptEdits auto-accepts file edits
 	PermissionModeAcceptEdits PermissionMode = "acceptEdits"
-
-	// PermissionModeBypassPermissions allows all tools (use with caution)
-	PermissionModeBypassPermissions PermissionMode = "bypassPermissions"
 )
 
 // MCPServerType represents the type of MCP server
@@ -59,11 +56,17 @@ type Options struct {
 	// PermissionMode controls tool execution permissions
 	PermissionMode PermissionMode
 
+	// PermissionPromptToolName specifies tool name for permission prompts
+	PermissionPromptToolName string
+
 	// AllowedTools lists tools that can be used
 	AllowedTools []string
 
 	// DisallowedTools lists tools that cannot be used
 	DisallowedTools []string
+
+	// MCPTools lists MCP tools that can be used
+	MCPTools []string
 
 	// WorkingDirectory sets the working directory for the CLI
 	WorkingDirectory string
@@ -179,6 +182,55 @@ func WithMCPServer(name string, server MCPServer) Option {
 func WithAddDirs(dirs ...string) Option {
 	return func(o *Options) {
 		o.AddDirs = append(o.AddDirs, dirs...)
+	}
+}
+
+// WithAppendSystemPrompt appends to the system prompt
+func WithAppendSystemPrompt(prompt string) Option {
+	return func(o *Options) {
+		o.AppendSystemPrompt = prompt
+	}
+}
+
+// WithMaxThinkingTokens sets the maximum thinking tokens
+func WithMaxThinkingTokens(tokens int) Option {
+	return func(o *Options) {
+		o.MaxThinkingTokens = tokens
+	}
+}
+
+// WithPermissionPromptToolName sets the tool name for permission prompts
+func WithPermissionPromptToolName(toolName string) Option {
+	return func(o *Options) {
+		o.PermissionPromptToolName = toolName
+	}
+}
+
+// WithMCPTools sets the MCP tools that can be used
+func WithMCPTools(tools ...string) Option {
+	return func(o *Options) {
+		o.MCPTools = tools
+	}
+}
+
+// WithContinue enables continuing a previous conversation
+func WithContinue(continue_ bool) Option {
+	return func(o *Options) {
+		o.Continue = continue_
+	}
+}
+
+// WithResume resumes from a specific conversation ID
+func WithResume(conversationID string) Option {
+	return func(o *Options) {
+		o.Resume = conversationID
+	}
+}
+
+// WithSettings sets the path to a settings file
+func WithSettings(path string) Option {
+	return func(o *Options) {
+		o.Settings = path
 	}
 }
 

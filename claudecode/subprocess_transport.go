@@ -152,8 +152,16 @@ func (t *SubprocessTransport) buildCommand() ([]string, error) {
 		args = append(args, "--max-turns", fmt.Sprintf("%d", t.options.MaxTurns))
 	}
 
+	if t.options.MaxThinkingTokens > 0 {
+		args = append(args, "--max-thinking-tokens", fmt.Sprintf("%d", t.options.MaxThinkingTokens))
+	}
+
 	if len(t.options.DisallowedTools) > 0 {
 		args = append(args, "--disallowedTools", strings.Join(t.options.DisallowedTools, ","))
+	}
+
+	if len(t.options.MCPTools) > 0 {
+		args = append(args, "--mcp-tools", strings.Join(t.options.MCPTools, ","))
 	}
 
 	if t.options.Model != "" {
@@ -162,6 +170,10 @@ func (t *SubprocessTransport) buildCommand() ([]string, error) {
 
 	if t.options.PermissionMode != "" {
 		args = append(args, "--permission-mode", string(t.options.PermissionMode))
+	}
+
+	if t.options.PermissionPromptToolName != "" {
+		args = append(args, "--permission-prompt-tool-name", t.options.PermissionPromptToolName)
 	}
 
 	if t.options.Continue {
@@ -474,7 +486,6 @@ func (t *SubprocessTransport) Close() error {
 
 	t.connected.Store(false)
 
-	// Close stdin if not already closed
 	if !t.stdinClosed.Load() && t.stdin != nil {
 		t.stdin.Close()
 		t.stdinClosed.Store(true)
@@ -521,10 +532,8 @@ func (t *SubprocessTransport) readStderr() string {
 		return ""
 	}
 
-	// Seek to beginning
 	t.stderrFile.Seek(0, 0)
 
-	// Read all lines into a circular buffer
 	lines := make([]string, 0, stderrLines)
 	scanner := bufio.NewScanner(t.stderrFile)
 
