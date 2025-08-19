@@ -120,7 +120,7 @@ func buildPrompt() string {
 
 1. **Main README.md** (in project root):
    - Verify all code examples work with the current API
-   - Check that package names are correct (should be 'claudecode' not 'claude')
+   - Check that package names are correct (should be 'claudecode')
    - Ensure installation instructions are accurate
    - Update any outdated information
    - Fix any broken links or references

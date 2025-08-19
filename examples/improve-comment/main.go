@@ -44,7 +44,7 @@ func main() {
 
 	fmt.Println("\nSearching for improvable comments...")
 
-	prompt := `Please search through the Go SDK code in the claude/ directory and:
+	prompt := `Please search through the Go SDK code in the claudecode/ directory and:
 1. Find ONE comment that could be improved (make it more clear, add missing context, fix grammar, etc.)
 2. Show me the current comment and file location
 3. Explain why it needs improvement

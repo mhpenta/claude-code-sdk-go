@@ -42,12 +42,10 @@ func main() {
 		log.Fatal("Architecture analysis failed:", err)
 	}
 
-
 	fmt.Println("\nReviewing code quality...")
 	if err := reviewCodeQuality(client); err != nil {
 		log.Fatal("Code quality review failed:", err)
 	}
-
 
 	fmt.Println("\nGenerating improvement suggestions...")
 	if err := suggestImprovements(client); err != nil {
@@ -79,7 +77,7 @@ Be concise - limit your response to key observations.`
 func reviewCodeQuality(client claudecode.Client) error {
 	ctx := context.Background()
 
-	prompt := `Review the code quality of the Go SDK implementation in the claude/ directory.
+	prompt := `Review the code quality of the Go SDK implementation in the claudecode/ directory.
 Look for:
 1. Go idioms and best practices
 2. Error handling patterns
