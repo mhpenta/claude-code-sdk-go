@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/mhpenta/claude-code-sdk-go/claudecode"
 	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
+
+	"github.com/mhpenta/claude-code-sdk-go/claudecode"
 )
 
 func main() {
@@ -42,16 +43,15 @@ func main() {
 	}
 	defer session.Close()
 
-	fmt.Println("\nSearching for improvable comments...")
+	fmt.Println("Searching for improvable comments...")
 
-	prompt := `Please search through the Go SDK code in the claudecode/ directory and:
-1. Find ONE comment that could be improved (make it more clear, add missing context, fix grammar, etc.)
-2. Show me the current comment and file location
+	prompt := `Search the claudecode/ directory and:
+1. Find ONE comment that could be improved (clarity, context, grammar)
+2. Show the current comment and file location
 3. Explain why it needs improvement
-4. Use the Edit tool to improve that comment
-5. Keep the improvement concise but more helpful than the original
+4. Use the Edit tool to improve it
 
-Focus on comments that document functions, types, or important logic. Choose something meaningful, not just a trivial comment.`
+Focus on function/type documentation. Choose something meaningful.`
 
 	if err := session.Send(context.Background(), prompt); err != nil {
 		log.Fatal("Failed to send prompt:", err)
@@ -84,8 +84,8 @@ Focus on comments that document functions, types, or important logic. Choose som
 			}
 		case *claudecode.SystemMessage:
 			if m.Subtype == "tool_use" {
-				if data, ok := m.Data["name"].(string); ok && data == "Edit" {
-					fmt.Println("\n🔧 Applying edit...")
+				if name, ok := m.Data["name"].(string); ok && name == "Edit" {
+					fmt.Println("\n[Applying edit...]")
 				}
 			}
 		case *claudecode.ResultMessage:
@@ -100,7 +100,6 @@ Focus on comments that document functions, types, or important logic. Choose som
 			} else {
 				fmt.Println("\n\nNo edits were made")
 			}
-			fmt.Println()
 			return
 		}
 	}

@@ -20,17 +20,6 @@ type Message interface {
 	Type() MessageType
 }
 
-// BaseMessage contains common fields for messages
-type BaseMessage struct {
-	MessageType MessageType `json:"type"`
-	SessionID   string      `json:"session_id,omitempty"`
-}
-
-// Type returns the message type
-func (m BaseMessage) Type() MessageType {
-	return m.MessageType
-}
-
 // ContentBlock represents different types of content in a message
 type ContentBlock struct {
 	Type   string      `json:"type"`
@@ -57,37 +46,37 @@ type ToolResult struct {
 func (c ContentBlock) MarshalJSON() ([]byte, error) {
 	switch c.Type {
 	case "text":
+		text := ""
+		if c.Text != nil {
+			text = *c.Text
+		}
 		return json.Marshal(struct {
 			Type string `json:"type"`
 			Text string `json:"text"`
-		}{
-			Type: c.Type,
-			Text: *c.Text,
-		})
+		}{Type: c.Type, Text: text})
+
 	case "tool_use":
+		if c.Tool == nil {
+			return nil, fmt.Errorf("tool_use content block missing Tool data")
+		}
 		return json.Marshal(struct {
 			Type  string         `json:"type"`
 			ID    string         `json:"id"`
 			Name  string         `json:"name"`
 			Input map[string]any `json:"input"`
-		}{
-			Type:  c.Type,
-			ID:    c.Tool.ID,
-			Name:  c.Tool.Name,
-			Input: c.Tool.Input,
-		})
+		}{Type: c.Type, ID: c.Tool.ID, Name: c.Tool.Name, Input: c.Tool.Input})
+
 	case "tool_result":
+		if c.Result == nil {
+			return nil, fmt.Errorf("tool_result content block missing Result data")
+		}
 		return json.Marshal(struct {
 			Type      string `json:"type"`
 			ToolUseID string `json:"tool_use_id"`
 			Content   any    `json:"content,omitempty"`
 			IsError   *bool  `json:"is_error,omitempty"`
-		}{
-			Type:      c.Type,
-			ToolUseID: c.Result.ToolUseID,
-			Content:   c.Result.Content,
-			IsError:   c.Result.IsError,
-		})
+		}{Type: c.Type, ToolUseID: c.Result.ToolUseID, Content: c.Result.Content, IsError: c.Result.IsError})
+
 	default:
 		return nil, fmt.Errorf("unknown content block type: %s", c.Type)
 	}
@@ -134,34 +123,28 @@ func (c *ContentBlock) UnmarshalJSON(data []byte) error {
 
 // UserMessage represents a message from the user
 type UserMessage struct {
-	BaseMessage
 	Content string `json:"content"`
 }
 
-// NewUserMessage creates a new user message
-func NewUserMessage(content string) *UserMessage {
-	return &UserMessage{
-		BaseMessage: BaseMessage{MessageType: MessageTypeUser},
-		Content:     content,
-	}
-}
+func (m *UserMessage) Type() MessageType { return MessageTypeUser }
 
 // AssistantMessage represents a message from Claude
 type AssistantMessage struct {
-	BaseMessage
 	Content []ContentBlock `json:"content"`
 }
 
+func (m *AssistantMessage) Type() MessageType { return MessageTypeAssistant }
+
 // SystemMessage represents a system message
 type SystemMessage struct {
-	BaseMessage
 	Subtype string         `json:"subtype"`
 	Data    map[string]any `json:"data"`
 }
 
+func (m *SystemMessage) Type() MessageType { return MessageTypeSystem }
+
 // ResultMessage represents the final result of a conversation
 type ResultMessage struct {
-	BaseMessage
 	Subtype       string         `json:"subtype"`
 	DurationMS    int            `json:"duration_ms"`
 	DurationAPIMS int            `json:"duration_api_ms"`
@@ -173,11 +156,7 @@ type ResultMessage struct {
 	Result        *string        `json:"result,omitempty"`
 }
 
-// MessageResult wraps a message with a potential error
-type MessageResult struct {
-	Message Message
-	Error   error
-}
+func (m *ResultMessage) Type() MessageType { return MessageTypeResult }
 
 // ParseMessage parses a raw message from the CLI into a typed Message
 func ParseMessage(data map[string]any) (Message, error) {
@@ -197,39 +176,36 @@ func ParseMessage(data map[string]any) (Message, error) {
 		if err := json.Unmarshal(jsonData, &msg); err != nil {
 			return nil, fmt.Errorf("%w: failed to parse user message: %v", ErrInvalidMessage, err)
 		}
-		msg.MessageType = MessageTypeUser
 		return &msg, nil
 
 	case MessageTypeAssistant:
-		// Handle the nested message structure from CLI
-		if msgData, ok := data["message"].(map[string]any); ok {
-			if content, ok := msgData["content"].([]any); ok {
-				var blocks []ContentBlock
-				for _, item := range content {
-					blockJSON, err := json.Marshal(item)
-					if err != nil {
-						continue
-					}
-					var block ContentBlock
-					if err := json.Unmarshal(blockJSON, &block); err != nil {
-						continue
-					}
-					blocks = append(blocks, block)
-				}
-				return &AssistantMessage{
-					BaseMessage: BaseMessage{MessageType: MessageTypeAssistant},
-					Content:     blocks,
-				}, nil
-			}
+		msgData, ok := data["message"].(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("%w: invalid assistant message structure", ErrInvalidMessage)
 		}
-		return nil, fmt.Errorf("%w: invalid assistant message structure", ErrInvalidMessage)
+		content, ok := msgData["content"].([]any)
+		if !ok {
+			return nil, fmt.Errorf("%w: invalid assistant message content", ErrInvalidMessage)
+		}
+		var blocks []ContentBlock
+		for _, item := range content {
+			blockJSON, err := json.Marshal(item)
+			if err != nil {
+				continue
+			}
+			var block ContentBlock
+			if err := json.Unmarshal(blockJSON, &block); err != nil {
+				continue
+			}
+			blocks = append(blocks, block)
+		}
+		return &AssistantMessage{Content: blocks}, nil
 
 	case MessageTypeSystem:
 		var msg SystemMessage
 		if err := json.Unmarshal(jsonData, &msg); err != nil {
 			return nil, fmt.Errorf("%w: failed to parse system message: %v", ErrInvalidMessage, err)
 		}
-		msg.MessageType = MessageTypeSystem
 		return &msg, nil
 
 	case MessageTypeResult:
@@ -237,7 +213,6 @@ func ParseMessage(data map[string]any) (Message, error) {
 		if err := json.Unmarshal(jsonData, &msg); err != nil {
 			return nil, fmt.Errorf("%w: failed to parse result message: %v", ErrInvalidMessage, err)
 		}
-		msg.MessageType = MessageTypeResult
 		return &msg, nil
 
 	default:

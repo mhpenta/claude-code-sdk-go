@@ -1,6 +1,7 @@
 package claudecode
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -214,9 +215,9 @@ func WithMCPTools(tools ...string) Option {
 }
 
 // WithContinue enables continuing a previous conversation
-func WithContinue(continue_ bool) Option {
+func WithContinue() Option {
 	return func(o *Options) {
-		o.Continue = continue_
+		o.Continue = true
 	}
 }
 
@@ -266,29 +267,17 @@ func WithInitialPrompt(prompt string) SessionOption {
 func (o *Options) validate() error {
 	if o.WorkingDirectory != "" {
 		if _, err := os.Stat(o.WorkingDirectory); err != nil {
-			return &ClaudeError{
-				Code:    "INVALID_OPTIONS",
-				Message: "working directory does not exist",
-				Err:     err,
-			}
+			return fmt.Errorf("working directory does not exist: %w", err)
 		}
 	}
 
 	for _, dir := range o.AddDirs {
 		absPath, err := filepath.Abs(dir)
 		if err != nil {
-			return &ClaudeError{
-				Code:    "INVALID_OPTIONS",
-				Message: "invalid add directory path",
-				Err:     err,
-			}
+			return fmt.Errorf("invalid add directory path %q: %w", dir, err)
 		}
 		if _, err := os.Stat(absPath); err != nil {
-			return &ClaudeError{
-				Code:    "INVALID_OPTIONS",
-				Message: "add directory does not exist: " + dir,
-				Err:     err,
-			}
+			return fmt.Errorf("add directory does not exist %q: %w", dir, err)
 		}
 	}
 

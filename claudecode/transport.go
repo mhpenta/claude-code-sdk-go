@@ -1,37 +1,15 @@
 package claudecode
 
-import (
-	"context"
-	"io"
-)
+import "context"
 
-// Transport defines the interface for communication with Claude
-type Transport interface {
-	// Connect establishes a connection
+// transport defines the internal interface for communication with Claude CLI
+type transport interface {
 	Connect(ctx context.Context) error
-
-	// Close terminates the connection
 	Close() error
-
-	// Send sends messages to Claude
 	Send(ctx context.Context, messages []map[string]any) error
-
-	// Receive returns a channel for receiving messages
 	Receive(ctx context.Context) (<-chan map[string]any, error)
-
-	// Interrupt sends an interrupt signal
 	Interrupt(ctx context.Context) error
-
-	// IsConnected returns true if the transport is connected
 	IsConnected() bool
-}
-
-// StreamingTransport extends Transport with streaming capabilities
-type StreamingTransport interface {
-	Transport
-
-	// SendStream sends a stream of messages
-	SendStream(ctx context.Context, messages <-chan map[string]any) error
 }
 
 // Client is the main interface for interacting with Claude
@@ -51,11 +29,8 @@ type Client interface {
 
 // Session represents an interactive conversation session
 type Session interface {
-	// Send sends a message in the session
+	// Send sends a user message in the session
 	Send(ctx context.Context, message string) error
-
-	// SendMessage sends a pre-constructed message
-	SendMessage(ctx context.Context, msg Message) error
 
 	// Receive returns a channel for receiving messages
 	Receive(ctx context.Context) (<-chan Message, error)
@@ -70,8 +45,9 @@ type Session interface {
 	Close() error
 }
 
+// Compile-time interface satisfaction checks
 var (
-	_ io.Closer = (Transport)(nil)
-	_ io.Closer = (Client)(nil)
-	_ io.Closer = (Session)(nil)
+	_ transport = (*subprocessTransport)(nil)
+	_ Client    = (*client)(nil)
+	_ Session   = (*session)(nil)
 )

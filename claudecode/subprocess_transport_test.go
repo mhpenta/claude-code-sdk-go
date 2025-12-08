@@ -38,7 +38,7 @@ func TestSubprocessExitHandling(t *testing.T) {
 				MaxTurns: tt.maxTurns,
 			}
 
-			transport := NewOneShotTransport(opts, tt.prompt)
+			transport := newOneShotTransport(opts, tt.prompt)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -87,7 +87,7 @@ func TestSubprocessEarlyClose(t *testing.T) {
 		MaxTurns: 5,
 	}
 
-	transport := NewOneShotTransport(opts, "Count from 1 to 100")
+	transport := newOneShotTransport(opts, "Count from 1 to 100")
 
 	ctx := context.Background()
 
@@ -133,7 +133,7 @@ func TestSubprocessNilLogger(t *testing.T) {
 		MaxTurns: 1,
 	}
 
-	transport := NewOneShotTransport(opts, "Say hello")
+	transport := newOneShotTransport(opts, "Say hello")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -188,7 +188,7 @@ func TestSubprocessFailToStart(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			transport := NewOneShotTransport(tt.options, "test")
+			transport := newOneShotTransport(tt.options, "test")
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -217,7 +217,7 @@ func TestSubprocessPanicScenarios(t *testing.T) {
 			Logger:  nil, // explicitly nil
 			CLIPath: "/does/not/exist/claude",
 		}
-		transport := NewOneShotTransport(opts, "test")
+		transport := newOneShotTransport(opts, "test")
 		ctx := context.Background()
 		_ = transport.Connect(ctx)
 		_ = transport.Close()
@@ -232,7 +232,7 @@ func TestSubprocessPanicScenarios(t *testing.T) {
 		opts := &Options{
 			Logger: logger,
 		}
-		transport := NewOneShotTransport(opts, "test")
+		transport := newOneShotTransport(opts, "test")
 		ctx := context.Background()
 		if err := transport.Connect(ctx); err != nil {
 			t.Logf("Connect failed: %v", err)
@@ -249,7 +249,7 @@ func TestSubprocessPanicScenarios(t *testing.T) {
 		opts := &Options{
 			Logger: logger,
 		}
-		transport := NewOneShotTransport(opts, "say hello")
+		transport := newOneShotTransport(opts, "say hello")
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		if err := transport.Connect(ctx); err != nil {

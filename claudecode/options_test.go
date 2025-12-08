@@ -25,7 +25,7 @@ func TestOptionsComplete(t *testing.T) {
 			Type:    MCPServerTypeStdio,
 			Command: "test-command",
 		}),
-		WithContinue(true),
+		WithContinue(),
 		WithResume("test-conversation-id"),
 		WithSettings("/path/to/settings.json"),
 		WithAddDirs("./src", "./docs"),

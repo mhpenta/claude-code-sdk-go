@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/mhpenta/claude-code-sdk-go/claudecode"
 )
@@ -47,11 +46,11 @@ func main() {
 	}
 
 	fmt.Println("Reviewing README files...")
-	fmt.Println("----------------------------")
+	fmt.Println(strings.Repeat("-", 40))
 
 	editsCount := 0
 	filesEdited := make(map[string]bool)
-	startTime := time.Now()
+
 	for msg := range msgChan {
 		switch m := msg.(type) {
 		case *claudecode.AssistantMessage:
@@ -64,8 +63,8 @@ func main() {
 				case "tool_use":
 					if block.Tool != nil && block.Tool.Name == "Edit" {
 						editsCount++
-						if filepath, ok := block.Tool.Input["file_path"].(string); ok {
-							filesEdited[filepath] = true
+						if path, ok := block.Tool.Input["file_path"].(string); ok {
+							filesEdited[path] = true
 						}
 					}
 				}
@@ -76,25 +75,24 @@ func main() {
 				if toolName, ok := m.Data["name"].(string); ok {
 					switch toolName {
 					case "Read":
-						fmt.Println("\nReading file...")
+						fmt.Println("\n[Reading file...]")
 					case "Edit":
-						fmt.Println("\nApplying edit...")
+						fmt.Println("\n[Applying edit...]")
 					case "Grep":
-						fmt.Println("\nSearching...")
+						fmt.Println("\n[Searching...]")
 					}
 				}
 			}
 
 		case *claudecode.ResultMessage:
-			duration := time.Since(startTime)
 			fmt.Println("\n\n" + strings.Repeat("=", 50))
-			fmt.Println("Review Summary:")
-			fmt.Printf("- Duration: %.2f seconds\n", duration.Seconds())
-			fmt.Printf("- Total edits made: %d\n", editsCount)
+			fmt.Println("Summary:")
+			fmt.Printf("- Duration: %dms\n", m.DurationMS)
+			fmt.Printf("- Edits: %d\n", editsCount)
 			fmt.Printf("- Files modified: %d\n", len(filesEdited))
 
 			if len(filesEdited) > 0 {
-				fmt.Println("\nModified files:")
+				fmt.Println("\nModified:")
 				for file := range filesEdited {
 					fmt.Printf("  - %s\n", file)
 				}
@@ -104,45 +102,33 @@ func main() {
 				fmt.Printf("\nCost: $%.4f\n", *m.TotalCostUSD)
 			}
 
-			if !m.IsError && editsCount > 0 {
-				fmt.Println("\nREADME files successfully reviewed and updated!")
-			} else if !m.IsError && editsCount == 0 {
-				fmt.Println("\nREADME files reviewed - no updates needed!")
+			if m.IsError {
+				fmt.Println("\nCompleted with errors")
+			} else if editsCount > 0 {
+				fmt.Println("\nREADME files updated!")
 			} else {
-				fmt.Println("\nReview completed with errors")
+				fmt.Println("\nNo updates needed")
 			}
 		}
 	}
 }
 
 func buildPrompt() string {
-	return `Please review all README files in this Claude Code Go SDK project and make necessary improvements. Focus on:
+	return `Review README files in this Go SDK project and fix any issues:
 
-1. **Main README.md** (in project root):
-   - Verify all code examples work with the current API
-   - Check that package names are correct (should be 'claudecode')
-   - Ensure installation instructions are accurate
-   - Update any outdated information
-   - Fix any broken links or references
-   - Add missing sections if needed (contributing, license, etc.)
+1. Main README.md:
+   - Verify code examples match the current API
+   - Check package names (should be 'claudecode')
+   - Update outdated information
 
-2. **Examples README** (in examples/ directory):
-   - Ensure all example descriptions match their actual functionality
-   - Verify the list of examples is complete and up-to-date
-   - Check that run instructions are correct
-   - Add any missing examples to the list
+2. Examples README (if exists):
+   - Ensure descriptions match functionality
+   - Verify run instructions
 
-3. **Accuracy checks**:
-   - Import paths should use 'claudecode' package
-   - Method names and signatures should match the implementation
-   - Configuration options should be current
-   - Error handling examples should use correct error types
+3. Fix:
+   - Typos and grammar
+   - Incorrect method signatures
+   - Wrong error type names
 
-4. **Improvements to make**:
-   - Fix any typos or grammatical errors
-   - Improve clarity where needed
-   - Add helpful details that are missing
-   - Ensure consistency in formatting and style
-
-Please review each README file, explain what needs to be fixed, and then use the Edit tool to make the improvements. Focus on making the documentation accurate, clear, and helpful for developers using this SDK.`
+Use the Edit tool to make corrections.`
 }

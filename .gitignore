@@ -1,4 +1,35 @@
+# Dependencies
+vendor/
+
+# Build outputs
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+bin/
+dist/
+
+# Go workspace
+go.work
+go.work.sum
+
+# IDE/Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Project specific
 python-implementation/
 .claude
-.idea/
 examples/test-exit-handling
+
+# Test artifacts
+*.log
+coverage.out
+coverage.html

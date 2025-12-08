@@ -3,12 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/mhpenta/claude-code-sdk-go/claudecode"
 	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"github.com/mhpenta/claude-code-sdk-go/claudecode"
 )
 
 func main() {
@@ -56,14 +56,13 @@ func main() {
 func analyzeArchitecture(client claudecode.Client) error {
 	ctx := context.Background()
 
-	prompt := `Please analyze the architecture of this Claude Code Go SDK in the claude/ directory. 
+	prompt := `Analyze the architecture of this Go SDK in the claudecode/ directory.
 Focus on:
-1. Overall design patterns used
-2. Interface design and abstraction
-3. How it compares to the Python implementation
-4. Strengths of the current architecture
+1. Design patterns used
+2. Interface design
+3. Strengths of the architecture
 
-Be concise - limit your response to key observations.`
+Be concise.`
 
 	messages, err := client.Query(ctx, prompt)
 	if err != nil {
@@ -77,14 +76,13 @@ Be concise - limit your response to key observations.`
 func reviewCodeQuality(client claudecode.Client) error {
 	ctx := context.Background()
 
-	prompt := `Review the code quality of the Go SDK implementation in the claudecode/ directory.
+	prompt := `Review code quality in the claudecode/ directory.
 Look for:
 1. Go idioms and best practices
-2. Error handling patterns
+2. Error handling
 3. Concurrency safety
-4. Code organization
 
-Highlight both good practices and any concerns.`
+Highlight good practices and concerns.`
 
 	messages, err := client.Query(ctx, prompt)
 	if err != nil {
@@ -98,19 +96,34 @@ Highlight both good practices and any concerns.`
 func suggestImprovements(client claudecode.Client) error {
 	ctx := context.Background()
 
-	prompt := `Based on your analysis of the Claude Code Go SDK, suggest the top 3-5 improvements that would:
-1. Make the SDK more robust
-2. Improve the developer experience
+	prompt := `Suggest 3-5 improvements for this Go SDK that would:
+1. Make it more robust
+2. Improve developer experience
 3. Better align with Go best practices
 
-For each suggestion, briefly explain why it's important.`
+Briefly explain why each is important.`
 
 	msgChan, err := client.QueryStream(ctx, prompt)
 	if err != nil {
 		return fmt.Errorf("query stream failed: %w", err)
 	}
 
-	printStreamingResponse(msgChan)
+	for msg := range msgChan {
+		switch m := msg.(type) {
+		case *claudecode.AssistantMessage:
+			for _, block := range m.Content {
+				if block.Type == "text" && block.Text != nil {
+					fmt.Print(*block.Text)
+				}
+			}
+		case *claudecode.ResultMessage:
+			fmt.Printf("\n\nDuration: %dms", m.DurationMS)
+			if m.TotalCostUSD != nil {
+				fmt.Printf(" | Cost: $%.4f", *m.TotalCostUSD)
+			}
+			fmt.Println()
+		}
+	}
 	return nil
 }
 
@@ -125,29 +138,6 @@ func printResponse(messages []claudecode.Message) {
 			}
 		case *claudecode.ResultMessage:
 			fmt.Printf("\nDuration: %dms", m.DurationMS)
-			if m.TotalCostUSD != nil {
-				fmt.Printf(" | Cost: $%.4f", *m.TotalCostUSD)
-			}
-			fmt.Println()
-		}
-	}
-}
-
-func printStreamingResponse(msgChan <-chan claudecode.Message) {
-	var assistantOutput strings.Builder
-
-	for msg := range msgChan {
-		switch m := msg.(type) {
-		case *claudecode.AssistantMessage:
-			for _, block := range m.Content {
-				if block.Type == "text" && block.Text != nil {
-					assistantOutput.WriteString(*block.Text)
-					fmt.Print(*block.Text)
-				}
-			}
-		case *claudecode.ResultMessage:
-			// Print summary at the end
-			fmt.Printf("\n\nDuration: %dms", m.DurationMS)
 			if m.TotalCostUSD != nil {
 				fmt.Printf(" | Cost: $%.4f", *m.TotalCostUSD)
 			}

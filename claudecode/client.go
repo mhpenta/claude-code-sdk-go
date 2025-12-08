@@ -2,7 +2,6 @@ package claudecode
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"sync"
 )
@@ -11,19 +10,16 @@ import (
 type client struct {
 	options *Options
 	logger  *slog.Logger
-	mu      sync.Mutex
 }
 
 // New creates a new Claude client with the given options
 func New(opts ...Option) (Client, error) {
 	options := DefaultOptions()
 
-	// Apply options
 	for _, opt := range opts {
 		opt(options)
 	}
 
-	// Validate options
 	if err := options.validate(); err != nil {
 		return nil, err
 	}
@@ -48,7 +44,7 @@ func (c *client) Query(ctx context.Context, prompt string, opts ...QueryOption) 
 		opt(qOpts)
 	}
 
-	transport := NewOneShotTransport(c.options, prompt)
+	transport := newOneShotTransport(c.options, prompt)
 
 	if err := transport.Connect(ctx); err != nil {
 		return nil, err
@@ -96,22 +92,18 @@ func (c *client) QueryStream(ctx context.Context, prompt string, opts ...QueryOp
 	}
 	close(promptChan)
 
-	// Create streaming transport with closeStdinAfterPrompt=true
-	transport := NewStreamingTransport(c.options, promptChan, true)
+	transport := newStreamingTransport(c.options, promptChan, true)
 
-	// Connect
 	if err := transport.Connect(ctx); err != nil {
 		return nil, err
 	}
 
-	// Receive messages
 	rawChan, err := transport.Receive(ctx)
 	if err != nil {
 		transport.Close()
 		return nil, err
 	}
 
-	// Convert raw messages to typed messages
 	msgChan := make(chan Message)
 
 	go func() {
@@ -148,10 +140,8 @@ func (c *client) NewSession(ctx context.Context, opts ...SessionOption) (Session
 		opt(sOpts)
 	}
 
-	// Create empty prompt channel for interactive mode
 	promptChan := make(chan map[string]any)
 
-	// If initial prompt provided, send it
 	if sOpts.initialPrompt != "" {
 		go func() {
 			promptChan <- map[string]any{
@@ -166,27 +156,25 @@ func (c *client) NewSession(ctx context.Context, opts ...SessionOption) (Session
 		}()
 	}
 
-	// Create streaming transport with closeStdinAfterPrompt=false for interactive mode
-	transport := NewStreamingTransport(c.options, promptChan, false)
+	clientTransport := newStreamingTransport(c.options, promptChan, false)
 
-	// Connect
-	if err := transport.Connect(ctx); err != nil {
+	if err := clientTransport.Connect(ctx); err != nil {
 		return nil, err
 	}
 
 	sess := &session{
-		transport:  transport,
+		transport:  clientTransport,
 		logger:     c.logger.With("component", "session"),
 		ctx:        ctx,
 		promptChan: promptChan,
 	}
 
-	// Monitor context cancellation
 	go func() {
 		<-ctx.Done()
-		// If context is cancelled, ensure cleanup happens
-		// Don't log here as it might race with other cleanup
-		_ = sess.Close()
+		err := sess.Close()
+		if err != nil {
+			c.logger.Warn("failed to close session", "error", err)
+		}
 	}()
 
 	return sess, nil
@@ -200,7 +188,7 @@ func (c *client) Close() error {
 
 // session implements the Session interface
 type session struct {
-	transport  Transport
+	transport  transport
 	logger     *slog.Logger
 	ctx        context.Context
 	promptChan chan<- map[string]any
@@ -218,7 +206,6 @@ func (s *session) Send(ctx context.Context, message string) error {
 		return ErrStreamClosed
 	}
 
-	// Get session ID while we already hold the lock
 	sessionID := s.sessionID
 	if sessionID == "" {
 		sessionID = "default"
@@ -235,41 +222,6 @@ func (s *session) Send(ctx context.Context, message string) error {
 	}
 
 	return s.transport.Send(ctx, []map[string]any{msg})
-}
-
-// SendMessage sends a pre-constructed message
-func (s *session) SendMessage(ctx context.Context, msg Message) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.closed {
-		return ErrStreamClosed
-	}
-
-	// Convert Message to raw format
-	// For now, only support UserMessage
-	userMsg, ok := msg.(*UserMessage)
-	if !ok {
-		return fmt.Errorf("%w: only UserMessage supported for sending", ErrInvalidMessage)
-	}
-
-	// Get session ID while we already hold the lock
-	sessionID := s.sessionID
-	if sessionID == "" {
-		sessionID = "default"
-	}
-
-	rawMsg := map[string]any{
-		"type": "user",
-		"message": map[string]any{
-			"role":    "user",
-			"content": userMsg.Content,
-		},
-		"parent_tool_use_id": nil,
-		"session_id":         sessionID,
-	}
-
-	return s.transport.Send(ctx, []map[string]any{rawMsg})
 }
 
 // Receive returns a channel for receiving messages
@@ -291,7 +243,6 @@ func (s *session) Receive(ctx context.Context) (<-chan Message, error) {
 				continue
 			}
 
-			// Update session ID if we get a result message
 			if result, ok := msg.(*ResultMessage); ok && result.SessionID != "" {
 				s.mu.Lock()
 				s.sessionID = result.SessionID
@@ -320,7 +271,6 @@ func (s *session) ReceiveOne(ctx context.Context) ([]Message, error) {
 	for msg := range msgChan {
 		messages = append(messages, msg)
 
-		// Stop after ResultMessage
 		if _, ok := msg.(*ResultMessage); ok {
 			break
 		}
@@ -346,15 +296,4 @@ func (s *session) Close() error {
 	s.closed = true
 	close(s.promptChan)
 	return s.transport.Close()
-}
-
-// getSessionID returns the current session ID
-func (s *session) getSessionID() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.sessionID == "" {
-		return "default"
-	}
-	return s.sessionID
 }
