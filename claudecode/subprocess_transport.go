@@ -77,7 +77,6 @@ func newOneShotTransport(opts *Options, prompt string) *subprocessTransport {
 
 // findCLI locates the Claude CLI executable
 func (t *subprocessTransport) findCLI() (string, error) {
-	// Check if custom path is provided
 	if t.options.CLIPath != "" {
 		if _, err := os.Stat(t.options.CLIPath); err == nil {
 			return t.options.CLIPath, nil
@@ -218,13 +217,11 @@ func (t *subprocessTransport) Connect(ctx context.Context) error {
 		return err
 	}
 
-	// Create temp file for stderr
 	t.stderrFile, err = os.CreateTemp("", "claude_stderr_*.log")
 	if err != nil {
 		return fmt.Errorf("%w: failed to create stderr file: %v", ErrConnectionFailed, err)
 	}
 
-	// Build command
 	t.cmd = exec.CommandContext(ctx, cmdArgs[0], cmdArgs[1:]...)
 	t.cmd.Env = append(os.Environ(), "CLAUDE_CODE_ENTRYPOINT=sdk-go")
 
