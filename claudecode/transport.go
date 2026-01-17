@@ -10,6 +10,8 @@ type transport interface {
 	Receive(ctx context.Context) (<-chan map[string]any, error)
 	Interrupt(ctx context.Context) error
 	IsConnected() bool
+	// SendControlRequest sends a control request and waits for a response
+	SendControlRequest(ctx context.Context, request map[string]any) (map[string]any, error)
 }
 
 // Client is the main interface for interacting with Claude
@@ -40,6 +42,21 @@ type Session interface {
 
 	// Interrupt sends an interrupt signal
 	Interrupt(ctx context.Context) error
+
+	// SetPermissionMode changes the permission mode during the session
+	SetPermissionMode(ctx context.Context, mode PermissionMode) error
+
+	// SetModel changes the model during the session
+	SetModel(ctx context.Context, model string) error
+
+	// RewindFiles rewinds files to a checkpoint (requires EnableFileCheckpointing)
+	RewindFiles(ctx context.Context, userMessageID string) error
+
+	// GetServerInfo retrieves server information (available commands, output styles)
+	GetServerInfo(ctx context.Context) (map[string]any, error)
+
+	// SessionID returns the current session ID
+	SessionID() string
 
 	// Close closes the session
 	Close() error

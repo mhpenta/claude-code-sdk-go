@@ -1,6 +1,6 @@
 # Claude Code SDK for Go
 
-Go SDK for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
+Go SDK for [Claude Code](https://code.claude.com/docs/en/overview).
 
 ## Installation
 
@@ -100,6 +100,27 @@ err = session.Send(ctx, "Let's solve a problem step by step")
 
 // Receive all messages until result
 messages, err := session.ReceiveOne(ctx)
+
+// Dynamic session control
+err = session.SetPermissionMode(ctx, claudecode.PermissionModeAcceptEdits)
+err = session.SetModel(ctx, "claude-sonnet-4-20250514")
+
+// Get session ID
+fmt.Println("Session ID:", session.SessionID())
+```
+
+### File Checkpointing (Rewind Support)
+
+```go
+client, err := claudecode.New(
+    claudecode.WithEnableFileCheckpointing(),
+)
+
+session, err := client.NewSession(ctx)
+// ... make changes ...
+
+// Rewind files to a previous checkpoint
+err = session.RewindFiles(ctx, userMessageID)
 ```
 
 ## API
@@ -123,66 +144,191 @@ type Session interface {
     Receive(ctx context.Context) (<-chan Message, error)
     ReceiveOne(ctx context.Context) ([]Message, error)
     Interrupt(ctx context.Context) error
+    SetPermissionMode(ctx context.Context, mode PermissionMode) error
+    SetModel(ctx context.Context, model string) error
+    RewindFiles(ctx context.Context, userMessageID string) error
+    GetServerInfo(ctx context.Context) (map[string]any, error)
+    SessionID() string
     Close() error
 }
 ```
 
 ### Message Types
 
-- `AssistantMessage` - Response from Claude with `Content []ContentBlock`
-- `UserMessage` - User input
+- `AssistantMessage` - Response from Claude with `Content []ContentBlock`, `Model`, `Error`
+- `UserMessage` - User input with `Content`, `UUID`, `ParentToolUseID`
 - `SystemMessage` - System events (tool use notifications, etc.)
-- `ResultMessage` - Final result with `DurationMS`, `TotalCostUSD`, `IsError`
+- `ResultMessage` - Final result with `DurationMS`, `TotalCostUSD`, `IsError`, `StructuredOutput`
+- `StreamEvent` - Partial message updates during streaming (with `UUID`, `SessionID`, `Event`)
 
 ### ContentBlock
 
 ```go
 type ContentBlock struct {
-    Type   string      // "text", "tool_use", or "tool_result"
-    Text   *string     // For text blocks
-    Tool   *ToolUse    // For tool_use blocks
-    Result *ToolResult // For tool_result blocks
+    Type     string        // "text", "tool_use", "tool_result", or "thinking"
+    Text     *string       // For text blocks
+    Tool     *ToolUse      // For tool_use blocks
+    Result   *ToolResult   // For tool_result blocks
+    Thinking *ThinkingBlock // For thinking blocks (extended thinking)
+}
+
+type ThinkingBlock struct {
+    Thinking  string // The thinking content
+    Signature string // Signature for verification
 }
 ```
 
 ## Configuration Options
 
+### Basic Options
+
 ```go
 claudecode.New(
     // Model
     claudecode.WithModel("claude-sonnet-4-20250514"),
+    claudecode.WithFallbackModel("claude-haiku-3-20240307"),
 
     // Prompts
     claudecode.WithSystemPrompt("You are a coding assistant"),
-    claudecode.WithAppendSystemPrompt("Always format code properly"),
+    claudecode.WithSystemPromptPreset(claudecode.SystemPromptPreset{
+        Type:   "preset",
+        Preset: "claude_code",
+        Append: "Additional instructions",
+    }),
 
     // Tools
+    claudecode.WithTools("Read", "Write", "Bash"), // Explicit tool list
+    claudecode.WithTools(), // Empty list disables all built-in tools
+    claudecode.WithToolsPreset(claudecode.ToolsPreset{
+        Type:   "preset",
+        Preset: "claude_code",
+    }),
     claudecode.WithAllowedTools("Read", "Write", "Bash"),
     claudecode.WithDisallowedTools("WebSearch"),
-    claudecode.WithPermissionMode(claudecode.PermissionModeAcceptEdits),
+
+    // Permission Modes
+    claudecode.WithPermissionMode(claudecode.PermissionModeDefault),       // Prompts for dangerous tools
+    claudecode.WithPermissionMode(claudecode.PermissionModeAcceptEdits),   // Auto-accepts file edits
+    claudecode.WithPermissionMode(claudecode.PermissionModePlan),          // Plan-only mode
+    claudecode.WithPermissionMode(claudecode.PermissionModeBypassPermissions), // Allow all (use with caution)
 
     // Limits
     claudecode.WithMaxTurns(10),
     claudecode.WithMaxThinkingTokens(8000),
+    claudecode.WithMaxBudgetUSD(1.00), // Spending limit
 
     // Context
     claudecode.WithWorkingDirectory("/path/to/project"),
     claudecode.WithAddDirs("./src", "./docs"),
 
-    // Session
+    // Session Management
     claudecode.WithContinue(),
     claudecode.WithResume("conversation-id"),
+    claudecode.WithForkSession(), // Fork instead of continuing when resuming
+)
+```
 
-    // MCP
-    claudecode.WithMCPServer("filesystem", claudecode.MCPServer{
-        Type:    claudecode.MCPServerTypeStdio,
-        Command: "npx",
-        Args:    []string{"@modelcontextprotocol/server-filesystem", "/tmp"},
+### Advanced Options
+
+```go
+claudecode.New(
+    // Beta Features
+    claudecode.WithBetas(claudecode.SdkBetaContext1M), // Extended context window
+
+    // Setting Sources
+    claudecode.WithSettingSources(
+        claudecode.SettingSourceUser,
+        claudecode.SettingSourceProject,
+        claudecode.SettingSourceLocal,
+    ),
+
+    // Environment Variables
+    claudecode.WithEnv(map[string]string{
+        "CUSTOM_VAR": "value",
     }),
+
+    // Extra CLI Arguments
+    claudecode.WithExtraArg("verbose", nil),           // --verbose
+    claudecode.WithExtraArg("timeout", ptr("30000")),  // --timeout 30000
+
+    // Structured Output
+    claudecode.WithOutputFormat(claudecode.OutputFormat{
+        Type: "json_schema",
+        Schema: map[string]any{
+            "type": "object",
+            "properties": map[string]any{
+                "result": map[string]any{"type": "string"},
+            },
+        },
+    }),
+
+    // File Checkpointing
+    claudecode.WithEnableFileCheckpointing(),
+
+    // Partial Message Streaming
+    claudecode.WithIncludePartialMessages(),
 
     // Other
     claudecode.WithCLIPath("/custom/path/to/claude"),
     claudecode.WithLogger(slog.Default()),
+)
+```
+
+### MCP Server Configuration
+
+```go
+claudecode.New(
+    claudecode.WithMCPServer("filesystem", claudecode.MCPServer{
+        Type:    claudecode.MCPServerTypeStdio,
+        Command: "npx",
+        Args:    []string{"@modelcontextprotocol/server-filesystem", "/tmp"},
+        Env:     map[string]string{"DEBUG": "true"},
+    }),
+    claudecode.WithMCPServer("api", claudecode.MCPServer{
+        Type:    claudecode.MCPServerTypeHTTP,
+        URL:     "https://api.example.com/mcp",
+        Headers: map[string]string{"Authorization": "Bearer token"},
+    }),
+)
+```
+
+### Custom Agents
+
+```go
+claudecode.New(
+    claudecode.WithAgent("code-reviewer", claudecode.AgentDefinition{
+        Description: "Reviews code for best practices",
+        Prompt:      "You are a code reviewer. Focus on...",
+        Tools:       []string{"Read", "Grep"},
+        Model:       claudecode.AgentModelSonnet,
+    }),
+)
+```
+
+### Sandbox Configuration
+
+```go
+claudecode.New(
+    claudecode.WithSandbox(claudecode.SandboxSettings{
+        Enabled:                  true,
+        AutoAllowBashIfSandboxed: true,
+        ExcludedCommands:         []string{"git", "docker"},
+        Network: &claudecode.SandboxNetworkConfig{
+            AllowUnixSockets:  []string{"/var/run/docker.sock"},
+            AllowLocalBinding: true,
+        },
+    }),
+)
+```
+
+### Plugin Configuration
+
+```go
+claudecode.New(
+    claudecode.WithPlugin(claudecode.PluginConfig{
+        Type: claudecode.PluginTypeLocal,
+        Path: "/path/to/plugin",
+    }),
 )
 ```
 
@@ -201,6 +347,20 @@ if err != nil {
     }
     log.Fatal(err)
 }
+
+// Check for assistant message errors
+for _, msg := range messages {
+    if m, ok := msg.(*claudecode.AssistantMessage); ok {
+        if m.Error != "" {
+            switch m.Error {
+            case claudecode.AssistantMessageErrorRateLimit:
+                log.Println("Rate limited")
+            case claudecode.AssistantMessageErrorBillingError:
+                log.Println("Billing error")
+            }
+        }
+    }
+}
 ```
 
 Sentinel errors: `ErrNotInstalled`, `ErrNotConnected`, `ErrConnectionFailed`, `ErrInvalidMessage`, `ErrStreamClosed`
@@ -211,6 +371,7 @@ See the [examples](examples/) directory:
 - [analyze-sdk](examples/analyze-sdk/) - Code analysis
 - [improve-comment](examples/improve-comment/) - Code modification
 - [review-readmes](examples/review-readmes/) - Documentation review
+- [test-exit-handling](examples/test-exit-handling/) - Exit handling validation
 
 ## License
 

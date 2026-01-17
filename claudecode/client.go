@@ -284,6 +284,93 @@ func (s *session) Interrupt(ctx context.Context) error {
 	return s.transport.Interrupt(ctx)
 }
 
+// SetPermissionMode changes the permission mode during the session
+func (s *session) SetPermissionMode(ctx context.Context, mode PermissionMode) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed {
+		return ErrStreamClosed
+	}
+
+	request := map[string]any{
+		"subtype": "set_permission_mode",
+		"mode":    string(mode),
+	}
+
+	_, err := s.transport.SendControlRequest(ctx, request)
+	return err
+}
+
+// SetModel changes the model during the session
+func (s *session) SetModel(ctx context.Context, model string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed {
+		return ErrStreamClosed
+	}
+
+	request := map[string]any{
+		"subtype": "set_model",
+		"model":   model,
+	}
+
+	_, err := s.transport.SendControlRequest(ctx, request)
+	return err
+}
+
+// RewindFiles rewinds files to a checkpoint (requires EnableFileCheckpointing)
+func (s *session) RewindFiles(ctx context.Context, userMessageID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed {
+		return ErrStreamClosed
+	}
+
+	request := map[string]any{
+		"subtype":         "rewind_files",
+		"user_message_id": userMessageID,
+	}
+
+	_, err := s.transport.SendControlRequest(ctx, request)
+	return err
+}
+
+// GetServerInfo retrieves server information (available commands, output styles)
+func (s *session) GetServerInfo(ctx context.Context) (map[string]any, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed {
+		return nil, ErrStreamClosed
+	}
+
+	request := map[string]any{
+		"subtype": "get_server_info",
+	}
+
+	response, err := s.transport.SendControlRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract the response data
+	if respData, ok := response["response"].(map[string]any); ok {
+		return respData, nil
+	}
+
+	return response, nil
+}
+
+// SessionID returns the current session ID
+func (s *session) SessionID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sessionID
+}
+
 // Close closes the session
 func (s *session) Close() error {
 	s.mu.Lock()

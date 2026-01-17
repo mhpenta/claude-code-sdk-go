@@ -38,6 +38,10 @@ type subprocessTransport struct {
 	promptChan            <-chan map[string]any
 	closeStdinAfterPrompt bool
 
+	// Control request support
+	controlResponses   map[string]chan map[string]any
+	controlResponsesMu sync.Mutex
+
 	// Synchronization
 	mu          sync.Mutex
 	receiveDone chan struct{}
@@ -52,9 +56,10 @@ func newSubprocessTransport(opts *Options) *subprocessTransport {
 	}
 
 	return &subprocessTransport{
-		options:     opts,
-		logger:      logger.With("component", "subprocess-transport"),
-		receiveDone: make(chan struct{}),
+		options:          opts,
+		logger:           logger.With("component", "subprocess-transport"),
+		receiveDone:      make(chan struct{}),
+		controlResponses: make(map[string]chan map[string]any),
 	}
 }
 
@@ -95,6 +100,7 @@ func (t *subprocessTransport) findCLI() (string, error) {
 		filepath.Join(os.Getenv("HOME"), ".local/bin/claude"),
 		filepath.Join(os.Getenv("HOME"), "node_modules/.bin/claude"),
 		filepath.Join(os.Getenv("HOME"), ".yarn/bin/claude"),
+		filepath.Join(os.Getenv("HOME"), ".claude/local/claude"),
 	}
 
 	for _, loc := range locations {
@@ -128,12 +134,34 @@ func (t *subprocessTransport) buildCommand() ([]string, error) {
 
 	args := []string{cliPath, "--output-format", "stream-json", "--verbose"}
 
-	if t.options.SystemPrompt != "" {
+	// System prompt handling
+	if t.options.SystemPromptPreset != nil {
+		promptJSON, err := json.Marshal(t.options.SystemPromptPreset)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal system prompt preset: %w", err)
+		}
+		args = append(args, "--system-prompt", string(promptJSON))
+	} else if t.options.SystemPrompt != "" {
 		args = append(args, "--system-prompt", t.options.SystemPrompt)
 	}
 
 	if t.options.AppendSystemPrompt != "" {
 		args = append(args, "--append-system-prompt", t.options.AppendSystemPrompt)
+	}
+
+	// Tools handling
+	if t.options.ToolsPreset != nil {
+		toolsJSON, err := json.Marshal(t.options.ToolsPreset)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal tools preset: %w", err)
+		}
+		args = append(args, "--tools", string(toolsJSON))
+	} else if t.options.Tools != nil {
+		if len(t.options.Tools) == 0 {
+			args = append(args, "--tools", "[]")
+		} else {
+			args = append(args, "--tools", strings.Join(t.options.Tools, ","))
+		}
 	}
 
 	if len(t.options.AllowedTools) > 0 {
@@ -148,6 +176,10 @@ func (t *subprocessTransport) buildCommand() ([]string, error) {
 		args = append(args, "--max-thinking-tokens", fmt.Sprintf("%d", t.options.MaxThinkingTokens))
 	}
 
+	if t.options.MaxBudgetUSD != nil {
+		args = append(args, "--max-budget-usd", fmt.Sprintf("%.2f", *t.options.MaxBudgetUSD))
+	}
+
 	if len(t.options.DisallowedTools) > 0 {
 		args = append(args, "--disallowedTools", strings.Join(t.options.DisallowedTools, ","))
 	}
@@ -158,6 +190,10 @@ func (t *subprocessTransport) buildCommand() ([]string, error) {
 
 	if t.options.Model != "" {
 		args = append(args, "--model", t.options.Model)
+	}
+
+	if t.options.FallbackModel != "" {
+		args = append(args, "--fallback-model", t.options.FallbackModel)
 	}
 
 	if t.options.PermissionMode != "" {
@@ -176,12 +212,32 @@ func (t *subprocessTransport) buildCommand() ([]string, error) {
 		args = append(args, "--resume", t.options.Resume)
 	}
 
+	if t.options.ForkSession {
+		args = append(args, "--fork-session")
+	}
+
 	if t.options.Settings != "" {
 		args = append(args, "--settings", t.options.Settings)
 	}
 
+	if len(t.options.SettingSources) > 0 {
+		sources := make([]string, len(t.options.SettingSources))
+		for i, s := range t.options.SettingSources {
+			sources[i] = string(s)
+		}
+		args = append(args, "--setting-sources", strings.Join(sources, ","))
+	}
+
 	for _, dir := range t.options.AddDirs {
 		args = append(args, "--add-dir", dir)
+	}
+
+	if len(t.options.Betas) > 0 {
+		betas := make([]string, len(t.options.Betas))
+		for i, b := range t.options.Betas {
+			betas[i] = string(b)
+		}
+		args = append(args, "--betas", strings.Join(betas, ","))
 	}
 
 	if len(t.options.MCPServers) > 0 {
@@ -191,6 +247,55 @@ func (t *subprocessTransport) buildCommand() ([]string, error) {
 			return nil, fmt.Errorf("failed to marshal MCP config: %w", err)
 		}
 		args = append(args, "--mcp-config", string(configJSON))
+	}
+
+	if len(t.options.Agents) > 0 {
+		agentsJSON, err := json.Marshal(t.options.Agents)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal agents: %w", err)
+		}
+		args = append(args, "--agents", string(agentsJSON))
+	}
+
+	if t.options.Sandbox != nil {
+		sandboxJSON, err := json.Marshal(t.options.Sandbox)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal sandbox config: %w", err)
+		}
+		args = append(args, "--sandbox", string(sandboxJSON))
+	}
+
+	if len(t.options.Plugins) > 0 {
+		pluginsJSON, err := json.Marshal(t.options.Plugins)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal plugins: %w", err)
+		}
+		args = append(args, "--plugins", string(pluginsJSON))
+	}
+
+	if t.options.OutputFormat != nil {
+		formatJSON, err := json.Marshal(t.options.OutputFormat)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal output format: %w", err)
+		}
+		args = append(args, "--output-format-json", string(formatJSON))
+	}
+
+	if t.options.IncludePartialMessages {
+		args = append(args, "--include-partial-messages")
+	}
+
+	if t.options.EnableFileCheckpointing {
+		args = append(args, "--enable-file-checkpointing")
+	}
+
+	// Extra CLI args
+	for name, value := range t.options.ExtraArgs {
+		if value == nil {
+			args = append(args, "--"+name)
+		} else {
+			args = append(args, "--"+name, *value)
+		}
 	}
 
 	// Add prompt handling based on mode
@@ -223,7 +328,13 @@ func (t *subprocessTransport) Connect(ctx context.Context) error {
 	}
 
 	t.cmd = exec.CommandContext(ctx, cmdArgs[0], cmdArgs[1:]...)
-	t.cmd.Env = append(os.Environ(), "CLAUDE_CODE_ENTRYPOINT=sdk-go")
+
+	// Set environment variables
+	env := append(os.Environ(), "CLAUDE_CODE_ENTRYPOINT=sdk-go")
+	for k, v := range t.options.Env {
+		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+	t.cmd.Env = env
 
 	if t.options.WorkingDirectory != "" {
 		t.cmd.Dir = t.options.WorkingDirectory
@@ -328,6 +439,50 @@ func (t *subprocessTransport) Send(ctx context.Context, messages []map[string]an
 	return nil
 }
 
+// SendControlRequest sends a control request and waits for a response
+func (t *subprocessTransport) SendControlRequest(ctx context.Context, request map[string]any) (map[string]any, error) {
+	if !t.isStreaming {
+		return nil, errors.New("control requests require streaming mode")
+	}
+
+	if !t.connected.Load() || t.stdinClosed.Load() {
+		return nil, ErrNotConnected
+	}
+
+	requestID := fmt.Sprintf("req_%d", time.Now().UnixNano())
+	responseChan := make(chan map[string]any, 1)
+
+	t.controlResponsesMu.Lock()
+	t.controlResponses[requestID] = responseChan
+	t.controlResponsesMu.Unlock()
+
+	defer func() {
+		t.controlResponsesMu.Lock()
+		delete(t.controlResponses, requestID)
+		t.controlResponsesMu.Unlock()
+	}()
+
+	controlReq := map[string]any{
+		"type":       "control_request",
+		"request_id": requestID,
+		"request":    request,
+	}
+
+	encoder := json.NewEncoder(t.stdin)
+	if err := encoder.Encode(controlReq); err != nil {
+		return nil, fmt.Errorf("failed to send control request: %w", err)
+	}
+
+	select {
+	case response := <-responseChan:
+		return response, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-time.After(30 * time.Second):
+		return nil, errors.New("control request timed out")
+	}
+}
+
 // Receive returns a channel for receiving messages
 func (t *subprocessTransport) Receive(ctx context.Context) (<-chan map[string]any, error) {
 	if !t.connected.Load() {
@@ -357,8 +512,17 @@ func (t *subprocessTransport) Receive(ctx context.Context) (<-chan map[string]an
 				continue
 			}
 
-			// Skip control responses
+			// Handle control responses
 			if data["type"] == "control_response" {
+				if response, ok := data["response"].(map[string]any); ok {
+					if requestID, ok := response["request_id"].(string); ok {
+						t.controlResponsesMu.Lock()
+						if ch, exists := t.controlResponses[requestID]; exists {
+							ch <- response
+						}
+						t.controlResponsesMu.Unlock()
+					}
+				}
 				continue
 			}
 

@@ -1,6 +1,7 @@
 package claudecode
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -16,6 +17,29 @@ const (
 
 	// PermissionModeAcceptEdits auto-accepts file edits
 	PermissionModeAcceptEdits PermissionMode = "acceptEdits"
+
+	// PermissionModePlan enables plan-only mode
+	PermissionModePlan PermissionMode = "plan"
+
+	// PermissionModeBypassPermissions allows all operations (use with caution)
+	PermissionModeBypassPermissions PermissionMode = "bypassPermissions"
+)
+
+// SdkBeta represents SDK beta features
+type SdkBeta string
+
+const (
+	// SdkBetaContext1M enables extended context window
+	SdkBetaContext1M SdkBeta = "context-1m-2025-08-07"
+)
+
+// SettingSource represents where settings should be loaded from
+type SettingSource string
+
+const (
+	SettingSourceUser    SettingSource = "user"
+	SettingSourceProject SettingSource = "project"
+	SettingSourceLocal   SettingSource = "local"
 )
 
 // MCPServerType represents the type of MCP server
@@ -37,16 +61,111 @@ type MCPServer struct {
 	Headers map[string]string `json:"headers,omitempty"`
 }
 
+// AgentModel represents the model options for an agent
+type AgentModel string
+
+const (
+	AgentModelSonnet  AgentModel = "sonnet"
+	AgentModelOpus    AgentModel = "opus"
+	AgentModelHaiku   AgentModel = "haiku"
+	AgentModelInherit AgentModel = "inherit"
+)
+
+// AgentDefinition represents a custom agent configuration
+type AgentDefinition struct {
+	Description string     `json:"description"`
+	Prompt      string     `json:"prompt"`
+	Tools       []string   `json:"tools,omitempty"`
+	Model       AgentModel `json:"model,omitempty"`
+}
+
+// SandboxNetworkConfig represents network configuration for sandbox
+type SandboxNetworkConfig struct {
+	AllowUnixSockets    []string `json:"allowUnixSockets,omitempty"`
+	AllowAllUnixSockets bool     `json:"allowAllUnixSockets,omitempty"`
+	AllowLocalBinding   bool     `json:"allowLocalBinding,omitempty"`
+	HTTPProxyPort       int      `json:"httpProxyPort,omitempty"`
+	SOCKSProxyPort      int      `json:"socksProxyPort,omitempty"`
+}
+
+// SandboxIgnoreViolations represents violations to ignore in sandbox
+type SandboxIgnoreViolations struct {
+	File    []string `json:"file,omitempty"`
+	Network []string `json:"network,omitempty"`
+}
+
+// SandboxSettings represents sandbox configuration for bash command isolation
+type SandboxSettings struct {
+	Enabled                    bool                     `json:"enabled,omitempty"`
+	AutoAllowBashIfSandboxed   bool                     `json:"autoAllowBashIfSandboxed,omitempty"`
+	ExcludedCommands           []string                 `json:"excludedCommands,omitempty"`
+	AllowUnsandboxedCommands   bool                     `json:"allowUnsandboxedCommands,omitempty"`
+	Network                    *SandboxNetworkConfig    `json:"network,omitempty"`
+	IgnoreViolations           *SandboxIgnoreViolations `json:"ignoreViolations,omitempty"`
+	EnableWeakerNestedSandbox  bool                     `json:"enableWeakerNestedSandbox,omitempty"`
+}
+
+// PluginType represents the type of plugin
+type PluginType string
+
+const (
+	PluginTypeLocal PluginType = "local"
+)
+
+// PluginConfig represents a plugin configuration
+type PluginConfig struct {
+	Type PluginType `json:"type"`
+	Path string     `json:"path"`
+}
+
+// SystemPromptPreset represents a system prompt preset configuration
+type SystemPromptPreset struct {
+	Type   string `json:"type"`   // "preset"
+	Preset string `json:"preset"` // "claude_code"
+	Append string `json:"append,omitempty"`
+}
+
+// ToolsPreset represents a tools preset configuration
+type ToolsPreset struct {
+	Type   string `json:"type"`   // "preset"
+	Preset string `json:"preset"` // "claude_code"
+}
+
+// OutputFormat represents structured output configuration
+type OutputFormat struct {
+	Type   string         `json:"type"`             // "json_schema"
+	Schema map[string]any `json:"schema,omitempty"` // JSON schema definition
+}
+
+// AssistantMessageError represents possible error types from the assistant
+type AssistantMessageError string
+
+const (
+	AssistantMessageErrorAuthFailed     AssistantMessageError = "authentication_failed"
+	AssistantMessageErrorBillingError   AssistantMessageError = "billing_error"
+	AssistantMessageErrorRateLimit      AssistantMessageError = "rate_limit"
+	AssistantMessageErrorInvalidRequest AssistantMessageError = "invalid_request"
+	AssistantMessageErrorServerError    AssistantMessageError = "server_error"
+	AssistantMessageErrorUnknown        AssistantMessageError = "unknown"
+)
+
 // Options configures the Claude SDK
 type Options struct {
 	// SystemPrompt sets the system prompt for Claude
+	// Can be a string or use WithSystemPromptPreset for preset configuration
 	SystemPrompt string
 
-	// AppendSystemPrompt appends to the existing system prompt
+	// SystemPromptPreset configures a preset system prompt
+	SystemPromptPreset *SystemPromptPreset
+
+	// AppendSystemPrompt appends to the existing system prompt (deprecated, use SystemPromptPreset.Append)
 	AppendSystemPrompt string
 
 	// Model specifies which Claude model to use
 	Model string
+
+	// FallbackModel specifies a fallback model if the primary is unavailable
+	FallbackModel string
 
 	// MaxTurns limits the number of conversation turns
 	MaxTurns int
@@ -54,11 +173,20 @@ type Options struct {
 	// MaxThinkingTokens limits thinking tokens (default: 8000)
 	MaxThinkingTokens int
 
+	// MaxBudgetUSD sets a spending limit in USD
+	MaxBudgetUSD *float64
+
 	// PermissionMode controls tool execution permissions
 	PermissionMode PermissionMode
 
 	// PermissionPromptToolName specifies tool name for permission prompts
 	PermissionPromptToolName string
+
+	// Tools specifies available tools (list of names, empty list to disable built-ins, or preset)
+	Tools []string
+
+	// ToolsPreset configures a tools preset
+	ToolsPreset *ToolsPreset
 
 	// AllowedTools lists tools that can be used
 	AllowedTools []string
@@ -81,11 +209,44 @@ type Options struct {
 	// Resume resumes from a specific conversation ID
 	Resume string
 
+	// ForkSession creates a new session when resuming instead of continuing
+	ForkSession bool
+
 	// Settings path to a settings file
 	Settings string
 
+	// SettingSources controls which settings to load (user, project, local)
+	SettingSources []SettingSource
+
 	// AddDirs adds directories to the context
 	AddDirs []string
+
+	// Env sets additional environment variables
+	Env map[string]string
+
+	// ExtraArgs passes arbitrary CLI flags
+	ExtraArgs map[string]*string
+
+	// Betas enables SDK beta features
+	Betas []SdkBeta
+
+	// Agents defines custom agents
+	Agents map[string]AgentDefinition
+
+	// Sandbox configures bash command sandboxing
+	Sandbox *SandboxSettings
+
+	// Plugins configures custom plugins
+	Plugins []PluginConfig
+
+	// OutputFormat configures structured output
+	OutputFormat *OutputFormat
+
+	// IncludePartialMessages enables streaming of partial message updates
+	IncludePartialMessages bool
+
+	// EnableFileCheckpointing enables file change tracking for rewind support
+	EnableFileCheckpointing bool
 
 	// Logger for structured logging
 	Logger *slog.Logger
@@ -120,10 +281,24 @@ func WithSystemPrompt(prompt string) Option {
 	}
 }
 
+// WithSystemPromptPreset sets a preset system prompt configuration
+func WithSystemPromptPreset(preset SystemPromptPreset) Option {
+	return func(o *Options) {
+		o.SystemPromptPreset = &preset
+	}
+}
+
 // WithModel sets the model to use
 func WithModel(model string) Option {
 	return func(o *Options) {
 		o.Model = model
+	}
+}
+
+// WithFallbackModel sets a fallback model
+func WithFallbackModel(model string) Option {
+	return func(o *Options) {
+		o.FallbackModel = model
 	}
 }
 
@@ -134,6 +309,20 @@ func WithMaxTurns(turns int) Option {
 	}
 }
 
+// WithMaxThinkingTokens sets the maximum thinking tokens
+func WithMaxThinkingTokens(tokens int) Option {
+	return func(o *Options) {
+		o.MaxThinkingTokens = tokens
+	}
+}
+
+// WithMaxBudgetUSD sets a spending limit in USD
+func WithMaxBudgetUSD(budget float64) Option {
+	return func(o *Options) {
+		o.MaxBudgetUSD = &budget
+	}
+}
+
 // WithPermissionMode sets the permission mode
 func WithPermissionMode(mode PermissionMode) Option {
 	return func(o *Options) {
@@ -141,10 +330,24 @@ func WithPermissionMode(mode PermissionMode) Option {
 	}
 }
 
-// WithWorkingDirectory sets the working directory
-func WithWorkingDirectory(dir string) Option {
+// WithPermissionPromptToolName sets the tool name for permission prompts
+func WithPermissionPromptToolName(toolName string) Option {
 	return func(o *Options) {
-		o.WorkingDirectory = dir
+		o.PermissionPromptToolName = toolName
+	}
+}
+
+// WithTools sets the available tools (pass empty slice to disable all built-in tools)
+func WithTools(tools ...string) Option {
+	return func(o *Options) {
+		o.Tools = tools
+	}
+}
+
+// WithToolsPreset sets a tools preset configuration
+func WithToolsPreset(preset ToolsPreset) Option {
+	return func(o *Options) {
+		o.ToolsPreset = &preset
 	}
 }
 
@@ -162,10 +365,17 @@ func WithDisallowedTools(tools ...string) Option {
 	}
 }
 
-// WithCLIPath sets a custom CLI path
-func WithCLIPath(path string) Option {
+// WithMCPTools sets the MCP tools that can be used
+func WithMCPTools(tools ...string) Option {
 	return func(o *Options) {
-		o.CLIPath = path
+		o.MCPTools = tools
+	}
+}
+
+// WithWorkingDirectory sets the working directory
+func WithWorkingDirectory(dir string) Option {
+	return func(o *Options) {
+		o.WorkingDirectory = dir
 	}
 }
 
@@ -186,31 +396,10 @@ func WithAddDirs(dirs ...string) Option {
 	}
 }
 
-// WithAppendSystemPrompt appends to the system prompt
+// WithAppendSystemPrompt appends to the system prompt (deprecated, use WithSystemPromptPreset)
 func WithAppendSystemPrompt(prompt string) Option {
 	return func(o *Options) {
 		o.AppendSystemPrompt = prompt
-	}
-}
-
-// WithMaxThinkingTokens sets the maximum thinking tokens
-func WithMaxThinkingTokens(tokens int) Option {
-	return func(o *Options) {
-		o.MaxThinkingTokens = tokens
-	}
-}
-
-// WithPermissionPromptToolName sets the tool name for permission prompts
-func WithPermissionPromptToolName(toolName string) Option {
-	return func(o *Options) {
-		o.PermissionPromptToolName = toolName
-	}
-}
-
-// WithMCPTools sets the MCP tools that can be used
-func WithMCPTools(tools ...string) Option {
-	return func(o *Options) {
-		o.MCPTools = tools
 	}
 }
 
@@ -228,10 +417,106 @@ func WithResume(conversationID string) Option {
 	}
 }
 
+// WithForkSession enables forking when resuming a session
+func WithForkSession() Option {
+	return func(o *Options) {
+		o.ForkSession = true
+	}
+}
+
 // WithSettings sets the path to a settings file
 func WithSettings(path string) Option {
 	return func(o *Options) {
 		o.Settings = path
+	}
+}
+
+// WithSettingSources sets which settings to load
+func WithSettingSources(sources ...SettingSource) Option {
+	return func(o *Options) {
+		o.SettingSources = sources
+	}
+}
+
+// WithEnv sets additional environment variables
+func WithEnv(env map[string]string) Option {
+	return func(o *Options) {
+		if o.Env == nil {
+			o.Env = make(map[string]string)
+		}
+		for k, v := range env {
+			o.Env[k] = v
+		}
+	}
+}
+
+// WithExtraArg adds an extra CLI argument
+// Use nil for value to pass flag without value (e.g., --flag instead of --flag=value)
+func WithExtraArg(name string, value *string) Option {
+	return func(o *Options) {
+		if o.ExtraArgs == nil {
+			o.ExtraArgs = make(map[string]*string)
+		}
+		o.ExtraArgs[name] = value
+	}
+}
+
+// WithBetas enables SDK beta features
+func WithBetas(betas ...SdkBeta) Option {
+	return func(o *Options) {
+		o.Betas = append(o.Betas, betas...)
+	}
+}
+
+// WithAgent adds a custom agent definition
+func WithAgent(name string, agent AgentDefinition) Option {
+	return func(o *Options) {
+		if o.Agents == nil {
+			o.Agents = make(map[string]AgentDefinition)
+		}
+		o.Agents[name] = agent
+	}
+}
+
+// WithSandbox sets sandbox configuration
+func WithSandbox(sandbox SandboxSettings) Option {
+	return func(o *Options) {
+		o.Sandbox = &sandbox
+	}
+}
+
+// WithPlugin adds a plugin configuration
+func WithPlugin(plugin PluginConfig) Option {
+	return func(o *Options) {
+		o.Plugins = append(o.Plugins, plugin)
+	}
+}
+
+// WithOutputFormat sets structured output configuration
+func WithOutputFormat(format OutputFormat) Option {
+	return func(o *Options) {
+		o.OutputFormat = &format
+	}
+}
+
+// WithIncludePartialMessages enables streaming of partial message updates
+func WithIncludePartialMessages() Option {
+	return func(o *Options) {
+		o.IncludePartialMessages = true
+	}
+}
+
+// WithEnableFileCheckpointing enables file change tracking
+func WithEnableFileCheckpointing() Option {
+	return func(o *Options) {
+		o.EnableFileCheckpointing = true
+	}
+}
+
+// WithCLIPath sets a custom CLI path
+func WithCLIPath(path string) Option {
+	return func(o *Options) {
+		o.CLIPath = path
 	}
 }
 
@@ -282,4 +567,23 @@ func (o *Options) validate() error {
 	}
 
 	return nil
+}
+
+// MarshalSystemPrompt marshals the system prompt configuration to JSON
+func (o *Options) MarshalSystemPrompt() ([]byte, error) {
+	if o.SystemPromptPreset != nil {
+		return json.Marshal(o.SystemPromptPreset)
+	}
+	return nil, nil
+}
+
+// MarshalTools marshals the tools configuration to JSON
+func (o *Options) MarshalTools() ([]byte, error) {
+	if o.ToolsPreset != nil {
+		return json.Marshal(o.ToolsPreset)
+	}
+	if o.Tools != nil {
+		return json.Marshal(o.Tools)
+	}
+	return nil, nil
 }
